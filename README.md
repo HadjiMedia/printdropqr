@@ -74,10 +74,16 @@ Uploads accept PDF, DOCX, PNG, JPG, and JPEG files, enforce a 50 MiB maximum, va
 
 `GET` and `POST /api/cron/purge` remove expired storage objects and then delete their database records. Jobs expire 24 hours after creation. Failed object deletions are logged and left in the database for the next sweep. The endpoint requires `Authorization: Bearer $CRON_SECRET` and returns counts for monitoring.
 
-A Vercel schedule is included in `vercel.json` (hourly at minute 15); configure the same `CRON_SECRET` in the deployment environment. For another scheduler, call the endpoint hourly, for example:
+To trigger the purge endpoint automatically, configure your scheduler with `Authorization: Bearer $CRON_SECRET`:
 
 ```sh
 curl --fail-with-body -H "Authorization: Bearer ${CRON_SECRET}" https://your-domain.example/api/cron/purge
+```
+
+On Vercel Hobby accounts, cron jobs are restricted to daily execution and limited in total count ("too many cron jobs"). To avoid deployment failures, cron triggers can be run via external schedulers (e.g. GitHub Actions, cron-job.org, Upstash) or scheduled once daily in `vercel.json` if your plan permits:
+
+```json
+"crons": [{ "path": "/api/cron/purge", "schedule": "0 4 * * *" }]
 ```
 
 Also retain a storage-provider lifecycle policy for the upload prefix when available. The cron route processes up to 250 expired jobs per call; invoke it again if a backlog remains.
