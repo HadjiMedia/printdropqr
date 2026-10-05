@@ -1,0 +1,6 @@
+{
+  "name": "PrintDrop",
+  "description": "QR-code print-order dispatch application for local print shops, ready for Vercel deployment.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

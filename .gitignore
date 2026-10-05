@@ -1,0 +1,20 @@
+# Dependencies and generated build output
+node_modules/
+.next/
+out/
+build/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Deployment metadata and private local configuration
+.vercel/
+.env
+.env.*
+!.env.example
+
+# Local logs and editor/OS files
+npm-debug.log*
+.DS_Store
+
+# package-lock.json is intentionally NOT ignored. Commit it with package.json.
