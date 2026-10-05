@@ -30,6 +30,12 @@ import {
   Timer,
   X,
 } from "lucide-react";
+import {
+  calculatePrintPrice,
+  extractPageCount,
+  extractUserNotes,
+  formatPeso,
+} from "@/lib/pricing";
 
 type JobStatus = "WAITING" | "PRINTING" | "DONE" | "CANCELLED";
 type Shop = { id: string; name: string; slug: string; createdAt: string };
@@ -46,6 +52,9 @@ type Job = {
   status: JobStatus;
   createdAt: string;
   expiresAt: string;
+  pageCount?: number;
+  totalPrice?: number;
+  pricePerPage?: number;
 };
 
 type Filter = "ALL" | JobStatus;
@@ -457,56 +466,72 @@ export default function AdminDashboard({ shops: initialShops, selectedSlug: init
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#edf0ec]">
-                    {visibleJobs.map((job) => (
-                      <tr key={job.id} className="transition hover:bg-[#fbfcfa]">
-                        <td className="px-6 py-4">
-                          <span className="font-mono text-[13px] font-bold text-[#35543e]">#{job.queueNumber}</span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="max-w-[170px] truncate text-sm font-semibold text-[#35483b]">{job.customerName}</div>
-                          <div className="mt-1 text-[10px] text-[#a0aaa3]">
-                            Expires in {Math.max(1, Math.ceil((new Date(job.expiresAt).getTime() - Date.now()) / 3600000))}h
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex max-w-[220px] items-center gap-2">
-                            <FileText size={15} className="shrink-0 text-[#7d9780]" />
-                            <div className="min-w-0">
-                              <div className="truncate text-xs font-medium text-[#506055]">{job.fileName}</div>
-                              <div className="mt-0.5 text-[10px] text-[#a0aaa3]">{readableSize(job.fileSize)}</div>
+                    {visibleJobs.map((job) => {
+                      const pageCount = job.pageCount ?? extractPageCount(job.notes);
+                      const totalPrice = job.totalPrice ?? calculatePrintPrice(pageCount, job.copies, job.colorType);
+                      const cleanNotes = extractUserNotes(job.notes);
+
+                      return (
+                        <tr key={job.id} className="transition hover:bg-[#fbfcfa]">
+                          <td className="px-6 py-4">
+                            <span className="font-mono text-[13px] font-bold text-[#35543e]">#{job.queueNumber}</span>
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="max-w-[170px] truncate text-sm font-semibold text-[#35483b]">{job.customerName}</div>
+                            <div className="mt-1 text-[10px] text-[#a0aaa3]">
+                              Expires in {Math.max(1, Math.ceil((new Date(job.expiresAt).getTime() - Date.now()) / 3600000))}h
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="text-xs font-medium text-[#596b5f]">
-                            {job.paperSize === "LETTER" ? "Letter" : job.paperSize} · {job.colorType === "BW" ? "B&W" : "Color"}
-                          </div>
-                          <div className="mt-1 text-[10px] text-[#9aa49d]">
-                            {job.copies} {job.copies === 1 ? "copy" : "copies"}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <StatusBadge status={job.status} />
-                        </td>
-                        <td className="px-4 py-4 text-xs text-[#829087]">{relativeTime(job.createdAt)}</td>
-                        <td className="px-5 py-4">
-                          <div className="flex items-center justify-end gap-2">
-                            <a
-                              href={`/api/jobs/${job.id}/download`}
-                              className="inline-flex h-8 items-center gap-1.5 rounded-[9px] border border-[#e1e8e0] bg-white px-2.5 text-[11px] font-semibold text-[#5d7362] transition hover:border-[#9fbea1] hover:bg-[#f4f8f1]"
-                              aria-label={`Download ${job.fileName}`}
-                            >
-                              <ArrowDownToLine size={13} /> File
-                            </a>
-                            <StatusSelect
-                              job={job}
-                              updating={updatingId === job.id}
-                              onChange={(status) => void updateStatus(job, status)}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="flex max-w-[220px] items-center gap-2">
+                              <FileText size={15} className="shrink-0 text-[#7d9780]" />
+                              <div className="min-w-0">
+                                <div className="truncate text-xs font-medium text-[#506055]">{job.fileName}</div>
+                                <div className="mt-0.5 text-[10px] text-[#a0aaa3]">{readableSize(job.fileSize)}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-[#596b5f]">
+                                {job.paperSize === "LETTER" ? "Letter" : job.paperSize} · {job.colorType === "BW" ? "B&W (₱5)" : "Color (₱8)"}
+                              </span>
+                              <span className="rounded-md bg-[#eaf4e7] px-1.5 py-0.5 text-[10px] font-bold text-[#2a593a]">
+                                {formatPeso(totalPrice)}
+                              </span>
+                            </div>
+                            <div className="mt-1 text-[10px] text-[#8e9c91]">
+                              {pageCount} {pageCount === 1 ? "page" : "pages"} · {job.copies} {job.copies === 1 ? "copy" : "copies"}
+                            </div>
+                            {cleanNotes && (
+                              <div className="mt-1 line-clamp-1 text-[10px] italic text-[#718274]">
+                                Note: {cleanNotes}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-4 py-4">
+                            <StatusBadge status={job.status} />
+                          </td>
+                          <td className="px-4 py-4 text-xs text-[#829087]">{relativeTime(job.createdAt)}</td>
+                          <td className="px-5 py-4">
+                            <div className="flex items-center justify-end gap-2">
+                              <a
+                                href={`/api/jobs/${job.id}/download`}
+                                className="inline-flex h-8 items-center gap-1.5 rounded-[9px] border border-[#e1e8e0] bg-white px-2.5 text-[11px] font-semibold text-[#5d7362] transition hover:border-[#9fbea1] hover:bg-[#f4f8f1]"
+                                aria-label={`Download ${job.fileName}`}
+                              >
+                                <ArrowDownToLine size={13} /> File
+                              </a>
+                              <StatusSelect
+                                job={job}
+                                updating={updatingId === job.id}
+                                onChange={(status) => void updateStatus(job, status)}
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -696,9 +721,15 @@ function JobCard({
         </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="text-[11px] font-medium text-[#718078]">
-          {job.paperSize === "LETTER" ? "Letter" : job.paperSize} · {job.colorType === "BW" ? "B&W" : "Color"} · {job.copies}{" "}
-          {job.copies === 1 ? "copy" : "copies"}
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-[#718078]">
+          <span>{job.paperSize === "LETTER" ? "Letter" : job.paperSize}</span>
+          <span>·</span>
+          <span>{job.colorType === "BW" ? "B&W (₱5)" : "Color (₱8)"}</span>
+          <span>·</span>
+          <span>{job.pageCount ?? 1}p × {job.copies} {job.copies === 1 ? "copy" : "copies"}</span>
+          <span className="rounded-md bg-[#eaf4e7] px-1.5 py-0.5 text-[10px] font-bold text-[#2a593a]">
+            {formatPeso(job.totalPrice ?? calculatePrintPrice(job.pageCount ?? 1, job.copies, job.colorType))}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <a

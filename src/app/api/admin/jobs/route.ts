@@ -2,6 +2,12 @@ import { and, desc, eq, gt } from "drizzle-orm";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { DatabaseConfigurationError, db } from "@/db";
 import { printJobs, shops } from "@/db/schema";
+import {
+  calculatePrintPrice,
+  extractPageCount,
+  extractUserNotes,
+  getPricePerPage,
+} from "@/lib/pricing";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +23,7 @@ export async function GET(request: Request) {
     const [shop] = await db.select({ id: shops.id }).from(shops).where(eq(shops.slug, shopSlug)).limit(1);
     if (!shop) return Response.json({ error: "Shop not found." }, { status: 404 });
 
-    const jobs = await db
+    const rawJobs = await db
       .select({
         id: printJobs.id,
         queueNumber: printJobs.queueNumber,
@@ -36,6 +42,17 @@ export async function GET(request: Request) {
       .where(and(eq(printJobs.shopId, shop.id), gt(printJobs.expiresAt, new Date())))
       .orderBy(desc(printJobs.createdAt))
       .limit(150);
+
+    const jobs = rawJobs.map((job) => {
+      const pageCount = extractPageCount(job.notes);
+      return {
+        ...job,
+        pageCount,
+        notes: extractUserNotes(job.notes),
+        pricePerPage: getPricePerPage(job.colorType),
+        totalPrice: calculatePrintPrice(pageCount, job.copies, job.colorType),
+      };
+    });
 
     return Response.json({ jobs }, { headers: { "Cache-Control": "no-store, private" } });
   } catch (error) {

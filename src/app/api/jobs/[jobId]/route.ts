@@ -1,6 +1,12 @@
 import { and, eq, gt } from "drizzle-orm";
 import { DatabaseConfigurationError, db } from "@/db";
 import { printJobs, shops } from "@/db/schema";
+import {
+  calculatePrintPrice,
+  extractPageCount,
+  extractUserNotes,
+  getPricePerPage,
+} from "@/lib/pricing";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +43,22 @@ export async function GET(
       .limit(1);
 
     if (!job) return Response.json({ error: "Print request not found or expired." }, { status: 404 });
-    return Response.json(job, { headers: { "Cache-Control": "no-store, private" } });
+
+    const pageCount = extractPageCount(job.notes);
+    const cleanNotes = extractUserNotes(job.notes);
+    const pricePerPage = getPricePerPage(job.colorType);
+    const totalPrice = calculatePrintPrice(pageCount, job.copies, job.colorType);
+
+    return Response.json(
+      {
+        ...job,
+        pageCount,
+        notes: cleanNotes,
+        pricePerPage,
+        totalPrice,
+      },
+      { headers: { "Cache-Control": "no-store, private" } },
+    );
   } catch (error) {
     console.error("PrintDrop status lookup failed.", error);
     if (error instanceof DatabaseConfigurationError) {

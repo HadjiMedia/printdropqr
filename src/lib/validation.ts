@@ -2,10 +2,12 @@ import { z } from "zod";
 
 export const MAX_FILE_SIZE = 50 * 1024 * 1024;
 export const MAX_COPIES = 100;
+export const MAX_PAGES = 1000;
 
 export const createPrintJobSchema = z.object({
   shopSlug: z.string().trim().min(1).max(80).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
   customerName: z.string().trim().min(1, "Add a name or queue identifier.").max(80),
+  pageCount: z.coerce.number().int().min(1).max(MAX_PAGES).default(1),
   copies: z.coerce.number().int().min(1).max(MAX_COPIES),
   paperSize: z.enum(["A4", "LETTER", "LEGAL"]),
   colorType: z.enum(["BW", "COLOR"]),

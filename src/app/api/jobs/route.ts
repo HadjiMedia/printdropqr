@@ -4,6 +4,12 @@ import { DatabaseConfigurationError, db } from "@/db";
 import { printJobs, shops } from "@/db/schema";
 import { deletePrintFile, storePrintFile } from "@/lib/storage";
 import {
+  calculatePrintPrice,
+  encodeNotesWithPages,
+  getPricePerPage,
+} from "@/lib/pricing";
+import { extractPdfPageCount } from "@/lib/pdf";
+import {
   createPrintJobSchema,
   fileExtension,
   hasValidFileSignature,
@@ -31,6 +37,7 @@ export async function POST(request: Request) {
     const parsed = createPrintJobSchema.safeParse({
       shopSlug: form.get("shopSlug"),
       customerName: form.get("customerName"),
+      pageCount: form.get("pageCount") || 1,
       copies: form.get("copies"),
       paperSize: form.get("paperSize"),
       colorType: form.get("colorType"),
@@ -65,6 +72,15 @@ export async function POST(request: Request) {
       );
     }
 
+    // Auto-detect page count for PDFs if default 1 was passed
+    let pageCount = Math.max(1, parsed.data.pageCount);
+    if (extension === "pdf" && (!form.get("pageCount") || parsed.data.pageCount === 1)) {
+      const detectedPages = extractPdfPageCount(bytes);
+      if (detectedPages > 1) {
+        pageCount = detectedPages;
+      }
+    }
+
     const [shop] = await db.select().from(shops).where(eq(shops.slug, parsed.data.shopSlug)).limit(1);
     if (!shop) return Response.json({ error: "This print shop is not available." }, { status: 404 });
 
@@ -78,6 +94,9 @@ export async function POST(request: Request) {
 
     const createdAt = new Date();
     const expiresAt = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000);
+    const storedNotes = encodeNotesWithPages(parsed.data.notes, pageCount);
+    const totalPrice = calculatePrintPrice(pageCount, parsed.data.copies, parsed.data.colorType);
+    const pricePerPage = getPricePerPage(parsed.data.colorType);
 
     try {
       const created = await db.transaction(async (tx) => {
@@ -102,7 +121,7 @@ export async function POST(request: Request) {
             paperSize: parsed.data.paperSize,
             colorType: parsed.data.colorType,
             copies: parsed.data.copies,
-            notes: parsed.data.notes,
+            notes: storedNotes,
             status: "WAITING",
             createdAt,
             expiresAt,
@@ -113,7 +132,17 @@ export async function POST(request: Request) {
       });
 
       return Response.json(
-        { jobId: created.id, queueNumber: created.queueNumber, status: "WAITING", expiresAt: expiresAt.toISOString() },
+        {
+          jobId: created.id,
+          queueNumber: created.queueNumber,
+          status: "WAITING",
+          pageCount,
+          copies: parsed.data.copies,
+          colorType: parsed.data.colorType,
+          pricePerPage,
+          totalPrice,
+          expiresAt: expiresAt.toISOString(),
+        },
         { status: 201, headers: { "Cache-Control": "no-store" } },
       );
     } catch (error) {
