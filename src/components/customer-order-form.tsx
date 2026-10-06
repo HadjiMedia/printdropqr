@@ -6,7 +6,6 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertCircle,
-  ArrowLeft,
   ArrowRight,
   Check,
   CheckCircle2,
@@ -16,7 +15,6 @@ import {
   FileText,
   FileUp,
   Image as ImageIcon,
-  Info,
   LoaderCircle,
   Maximize2,
   Minus,
@@ -29,10 +27,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { MAX_FILE_SIZE, MAX_COPIES, MAX_PAGES, hasValidFileSignature } from "@/lib/validation";
 import {
-  BLACK_AND_WHITE,
-  COLOR,
   calculatePrintPrice,
   formatPeso,
   getPaperSizeLabel,
@@ -40,31 +35,40 @@ import {
   type ColorType,
   type PaperSize,
 } from "@/lib/pricing";
-import { extractPdfPageCount } from "@/lib/pdf";
+import {
+  fileExtension,
+  hasValidFileSignature,
+  MAX_COPIES,
+  MAX_FILE_SIZE,
+  MAX_PAGES,
+} from "@/lib/validation";
 
-type ShopInfo = { id: string; name: string; slug: string };
+type ShopInfo = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
+type UploadedItem = {
+  id: string;
+  file: File;
+  previewUrl: string;
+  name: string;
+  size: number;
+  ext: string;
+  kind: "image" | "pdf" | "docx" | "other";
+};
 
 function validateClientFile(file: File): string | null {
   if (file.size <= 0) {
-    return "This file is empty. Please choose a file with content.";
+    return "That file is empty. Please select a file with content.";
   }
   if (file.size > MAX_FILE_SIZE) {
     return "That file exceeds the 50 MB limit. Please select a smaller file.";
   }
   const extension = file.name.split(".").pop()?.toLowerCase();
   if (!extension || !["pdf", "docx", "png", "jpg", "jpeg"].includes(extension)) {
-    return "This file type isn't supported. Please upload a PDF, JPG, or PNG.";
-  }
-  if (
-    file.type &&
-    ![
-      "application/pdf",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "image/png",
-      "image/jpeg",
-    ].includes(file.type)
-  ) {
-    return "This file type isn't supported. Please upload a PDF, JPG, or PNG.";
+    return "This file type isn't supported. Please upload a PDF, DOCX, JPG, or PNG.";
   }
   return null;
 }
@@ -75,37 +79,29 @@ function formatFileSize(size: number): string {
     : `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function getFileTypeLabel(fileName: string, mimeType?: string): { label: string; kind: "image" | "pdf" | "docx" | "other" } {
-  const extension = fileName.split(".").pop()?.toLowerCase() ?? "";
-  if (["png", "jpg", "jpeg"].includes(extension) || mimeType?.startsWith("image/")) {
-    return { label: `${extension.toUpperCase()} Image`, kind: "image" };
-  }
-  if (extension === "pdf" || mimeType === "application/pdf") {
-    return { label: "PDF Document", kind: "pdf" };
-  }
-  if (extension === "docx") {
-    return { label: "Word Document (.docx)", kind: "docx" };
-  }
-  return { label: "Document", kind: "other" };
+function getKind(fileName: string): "image" | "pdf" | "docx" | "other" {
+  const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
+  if (["png", "jpg", "jpeg"].includes(ext)) return "image";
+  if (ext === "pdf") return "pdf";
+  if (ext === "docx") return "docx";
+  return "other";
 }
 
 export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
+  const appendInputRef = useRef<HTMLInputElement>(null);
 
-  // File state
-  const [file, setFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
-  const [imageLoadError, setImageLoadError] = useState(false);
-  const [lightboxOpen, setLightboxOpen] = useState(false);
+  // Files state
+  const [items, setItems] = useState<UploadedItem[]>([]);
+  const [detectedPdfPages, setDetectedPdfPages] = useState<number | null>(null);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   // Print configuration state
   const [colorType, setColorType] = useState<ColorType>("BW");
   const [pageCount, setPageCount] = useState<number>(1);
-  const [detectedPdfPages, setDetectedPdfPages] = useState<number | null>(null);
   const [copies, setCopies] = useState<number>(1);
-  const [paperSize, setPaperSize] = useState<"A4" | "LETTER" | "LEGAL">("A4");
+  const [paperSize, setPaperSize] = useState<PaperSize>("A4");
   const [customerName, setCustomerName] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
 
@@ -115,85 +111,165 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
   const [submitting, setSubmitting] = useState(false);
   const [analyzingFile, setAnalyzingFile] = useState(false);
 
-  // Clean up object URLs to avoid memory leaks
+  // Clean up object URLs when items change
   useEffect(() => {
     return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      items.forEach((item) => {
+        try {
+          URL.revokeObjectURL(item.previewUrl);
+        } catch {
+          // Ignore
+        }
+      });
     };
-  }, [previewUrl]);
+  }, [items]);
 
-  async function handleFileSelection(nextFile?: File) {
+  async function processFiles(incomingFiles: File[], isAppending = false) {
     setError("");
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(null);
-    }
-    setImageDimensions(null);
-    setImageLoadError(false);
-    setDetectedPdfPages(null);
+    if (!incomingFiles || incomingFiles.length === 0) return;
 
-    if (!nextFile) return;
+    setAnalyzingFile(true);
 
-    const validationError = validateClientFile(nextFile);
-    if (validationError) {
-      setFile(null);
-      if (inputRef.current) inputRef.current.value = "";
-      setError(validationError);
-      return;
-    }
-
-    const ext = nextFile.name.split(".").pop()?.toLowerCase() ?? "";
-
-    // Signature and corruption check
     try {
-      setAnalyzingFile(true);
-      const buffer = await nextFile.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
+      const validNewItems: UploadedItem[] = [];
 
-      if (!hasValidFileSignature(ext, bytes)) {
-        setFile(null);
-        if (inputRef.current) inputRef.current.value = "";
-        setError("This file appears to be corrupted or does not match its file extension. Please choose a valid document or image.");
+      for (let i = 0; i < incomingFiles.length; i++) {
+        const file = incomingFiles[i];
+        const validationError = validateClientFile(file);
+        if (validationError) {
+          setError(validationError);
+          setAnalyzingFile(false);
+          return;
+        }
+
+        const ext = fileExtension(file.name);
+        const buffer = await file.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+
+        if (!hasValidFileSignature(ext, bytes)) {
+          setError(`File "${file.name}" appears corrupted or does not match its extension.`);
+          setAnalyzingFile(false);
+          return;
+        }
+
+        const kind = getKind(file.name);
+        const objectUrl = URL.createObjectURL(file);
+
+        // If it's a PDF, detect page count
+        if (kind === "pdf") {
+          const { extractPdfPageCount } = await import("@/lib/pdf");
+          const pages = extractPdfPageCount(buffer);
+          setDetectedPdfPages(pages);
+          setPageCount(Math.max(1, pages));
+        }
+
+        validNewItems.push({
+          id: `${Date.now()}_${i}_${Math.random().toString(36).slice(2, 7)}`,
+          file,
+          previewUrl: objectUrl,
+          name: file.name,
+          size: file.size,
+          ext,
+          kind,
+        });
+      }
+
+      if (validNewItems.length === 0) {
         setAnalyzingFile(false);
         return;
       }
 
-      setFile(nextFile);
-      const objectUrl = URL.createObjectURL(nextFile);
-      setPreviewUrl(objectUrl);
+      // Check if user is mixing documents and images
+      if (isAppending) {
+        const existingKind = items[0]?.kind;
+        if (existingKind !== "image" || validNewItems.some((i) => i.kind !== "image")) {
+          setError("Multiple file uploads only support images (PNG, JPG, JPEG). Documents must be submitted individually.");
+          setAnalyzingFile(false);
+          return;
+        }
 
-      if (ext === "pdf") {
-        const pages = extractPdfPageCount(buffer);
-        setDetectedPdfPages(pages);
-        setPageCount(Math.max(1, pages));
+        const combined = [...items, ...validNewItems];
+        setItems(combined);
+        setPageCount(combined.length);
       } else {
-        setPageCount(1);
+        // Replacing
+        items.forEach((item) => {
+          try {
+            URL.revokeObjectURL(item.previewUrl);
+          } catch {
+            // Ignore
+          }
+        });
+
+        // If first is image and there are multiple images
+        if (validNewItems.every((i) => i.kind === "image")) {
+          setItems(validNewItems);
+          setPageCount(validNewItems.length);
+        } else {
+          // If document, keep the single document
+          setItems([validNewItems[0]]);
+        }
       }
     } catch {
-      setFile(null);
-      if (inputRef.current) inputRef.current.value = "";
-      setError("This file could not be read or may be corrupted. Please choose a different file.");
+      setError("An error occurred while reading your file. Please try again.");
     } finally {
       setAnalyzingFile(false);
+      if (inputRef.current) inputRef.current.value = "";
+      if (appendInputRef.current) appendInputRef.current.value = "";
     }
   }
 
   function onFileChange(event: ChangeEvent<HTMLInputElement>) {
-    void handleFileSelection(event.target.files?.[0]);
+    const fileList = event.target.files;
+    if (fileList && fileList.length > 0) {
+      void processFiles(Array.from(fileList), false);
+    }
+  }
+
+  function onAppendFilesChange(event: ChangeEvent<HTMLInputElement>) {
+    const fileList = event.target.files;
+    if (fileList && fileList.length > 0) {
+      void processFiles(Array.from(fileList), true);
+    }
   }
 
   function onDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     setDragging(false);
-    void handleFileSelection(event.dataTransfer.files?.[0]);
+    const fileList = event.dataTransfer.files;
+    if (fileList && fileList.length > 0) {
+      void processFiles(Array.from(fileList), false);
+    }
   }
 
-  function removeFile() {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(null);
-    setFile(null);
-    setImageDimensions(null);
-    setImageLoadError(false);
+  function removeItem(id: string) {
+    const target = items.find((i) => i.id === id);
+    if (target) {
+      try {
+        URL.revokeObjectURL(target.previewUrl);
+      } catch {
+        // Ignore
+      }
+    }
+    const remaining = items.filter((i) => i.id !== id);
+    setItems(remaining);
+    if (remaining.length === 0) {
+      setDetectedPdfPages(null);
+      setPageCount(1);
+    } else if (remaining.every((i) => i.kind === "image")) {
+      setPageCount(remaining.length);
+    }
+  }
+
+  function removeAllFiles() {
+    items.forEach((item) => {
+      try {
+        URL.revokeObjectURL(item.previewUrl);
+      } catch {
+        // Ignore
+      }
+    });
+    setItems([]);
     setDetectedPdfPages(null);
     setPageCount(1);
     setError("");
@@ -204,18 +280,27 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
     inputRef.current?.click();
   }
 
+  function triggerAppendPicker() {
+    appendInputRef.current?.click();
+  }
+
   // Automatic pricing calculation using centralized functions
   const pricePerPage = getPricePerPage(colorType, paperSize);
   const totalPrice = calculatePrintPrice(pageCount, copies, colorType, paperSize);
   const bwRate = getPricePerPage("BW", paperSize);
   const colorRate = getPricePerPage("COLOR", paperSize);
   const totalSheetsToPrint = pageCount * copies;
+  const totalBytes = items.reduce((acc, curr) => acc + curr.size, 0);
+
+  const isMultiImage = items.length > 1 && items.every((i) => i.kind === "image");
+  const isSingleImage = items.length === 1 && items[0].kind === "image";
+  const isDocument = items.length === 1 && (items[0].kind === "pdf" || items[0].kind === "docx");
 
   async function submitOrder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
 
-    if (!file) {
+    if (items.length === 0) {
       setError("Please select or drop a file to print before submitting.");
       return;
     }
@@ -228,7 +313,16 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
     setSubmitting(true);
     const body = new FormData();
     body.set("shopSlug", shop.slug);
-    body.set("file", file);
+
+    if (items.length === 1) {
+      body.set("file", items[0].file);
+    } else {
+      items.forEach((item) => {
+        body.append("files", item.file);
+      });
+      body.set("file", items[0].file);
+    }
+
     body.set("customerName", customerName.trim());
     body.set("pageCount", String(pageCount));
     body.set("copies", String(copies));
@@ -266,47 +360,32 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
     }
   }
 
-  const fileInfo = file ? getFileTypeLabel(file.name, file.type) : null;
-
   return (
     <main className="min-h-screen bg-[#f6f8f5] px-4 pb-16 pt-5 text-[#1f372a] sm:px-6 sm:pt-7">
       {/* Top Header */}
       <header className="mx-auto flex max-w-[1040px] items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5 transition hover:opacity-85" aria-label="PrintDrop home">
-          <span className="grid size-9 place-items-center rounded-[12px] bg-[#23664b] text-[#d8f5a7] shadow-sm">
-            <Printer size={17} strokeWidth={2.4} />
+          <span className="grid size-9 place-items-center rounded-[13px] bg-[#23664b] text-[#d8f5a7] shadow-sm">
+            <Printer size={17} />
           </span>
-          <span className="text-[19px] font-bold tracking-[-.07em] text-[#1e3427]">
-            printdrop<span className="text-[#6c8f7a]">.</span>
+          <span className="text-[19px] font-bold tracking-[-.07em] text-[#1f3528]">
+            printdrop<span className="text-[#6c917a]">.</span>
           </span>
         </Link>
-        <div className="flex items-center gap-2 rounded-full border border-[#dfe6dc] bg-white px-3.5 py-1.5 text-xs font-semibold text-[#546b5d] shadow-sm">
-          <span className="size-2 rounded-full bg-[#52a468]" />
-          <span>Self-service print counter</span>
-        </div>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-[#dce5da] bg-white px-3 py-1 text-xs font-semibold text-[#32523e] shadow-xs">
+          <span className="size-2 animate-pulse rounded-full bg-[#3fa364]" />
+          {shop.name}
+        </span>
       </header>
 
       {/* Main Container */}
-      <div className="mx-auto mt-6 max-w-[700px] sm:mt-8">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#66776c] transition hover:text-[#23664b]"
-        >
-          <ArrowLeft size={14} /> Back to PrintDrop home
-        </Link>
-
-        {/* Shop Destination Banner */}
-        <div className="mt-3.5 flex items-center justify-between gap-3 rounded-2xl border border-[#e1e9df] bg-white px-4 py-3 shadow-[0_3px_12px_rgba(35,70,45,.03)] sm:px-5 sm:py-3.5">
-          <div className="flex items-center gap-3">
-            <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#edf5e8] text-[#346b4f]">
-              <Printer size={18} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-[.14em] text-[#7a8a7f]">Printing at</p>
-              <h2 className="truncate text-sm font-bold text-[#233a2c] sm:text-[15px]">{shop.name}</h2>
-            </div>
-          </div>
-          <span className="rounded-full bg-[#f0f6ec] px-2.5 py-1 text-[11px] font-semibold text-[#447653]">
+      <div className="mx-auto mt-6 max-w-[760px] sm:mt-8">
+        {/* Navigation Breadcrumb */}
+        <div className="flex items-center justify-between text-xs text-[#718276]">
+          <Link href="/" className="transition hover:text-[#23664b]">
+            ← Back to shop list
+          </Link>
+          <span className="rounded-md bg-[#edf5e8] px-2 py-0.5 text-[11px] font-bold text-[#35684a]">
             Accepting orders
           </span>
         </div>
@@ -317,10 +396,10 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
             <Sparkles size={12} /> Easy self-service printing
           </div>
           <h1 className="mt-2.5 text-[32px] font-bold leading-[1.08] tracking-[-.05em] text-[#1b3225] sm:text-[40px]">
-            Send documents.<br className="hidden sm:inline" /> Pick up at the counter.
+            Send documents &amp; photos.<br className="hidden sm:inline" /> Pick up at the counter.
           </h1>
           <p className="mt-2 text-sm leading-6 text-[#697a6f] sm:text-[15px]">
-            Upload your file, preview it, choose your paper size and print type, and receive your live queue number.
+            Upload your documents or multiple photos, review the preview, select your options, and track your order in real time.
           </p>
         </div>
 
@@ -340,21 +419,32 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
               </span>
             </div>
 
-            {/* Hidden Input */}
+            {/* Hidden Inputs */}
             <input
               ref={inputRef}
               id="file"
               name="file"
               type="file"
+              multiple
               accept=".pdf,.docx,.png,.jpg,.jpeg,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg"
               className="sr-only"
               onChange={onFileChange}
               aria-label="Upload document or image"
             />
+            <input
+              ref={appendInputRef}
+              id="append-file"
+              type="file"
+              multiple
+              accept="image/png,image/jpeg,.png,.jpg,.jpeg"
+              className="sr-only"
+              onChange={onAppendFilesChange}
+              aria-label="Add more images"
+            />
 
             {/* Dropzone or Preview Area */}
             <div className="mt-5">
-              {!file ? (
+              {items.length === 0 ? (
                 <div
                   onDragEnter={(e) => {
                     e.preventDefault();
@@ -385,10 +475,10 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
                     <FileUp size={22} />
                   </span>
                   <p className="mt-3 text-sm font-bold text-[#283e31]">
-                    Click to upload document or drag &amp; drop
+                    Click to upload file(s) or drag &amp; drop
                   </p>
                   <p className="mt-1 text-xs text-[#758478]">
-                    Supported formats: PDF, PNG, JPG, or DOCX (up to 50 MB)
+                    Supports PDF, DOCX, or multiple PNG/JPG photos (up to 50 MB total)
                   </p>
                   <span className="mt-3.5 inline-flex items-center gap-1.5 rounded-full bg-[#f0f4ee] px-3.5 py-1 text-[11px] font-semibold text-[#486352] transition group-hover:bg-[#e4efe0]">
                     Browse from computer or phone
@@ -400,21 +490,21 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e9efe8] pb-3.5">
                     <div className="flex min-w-0 items-center gap-3">
                       <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#23664b] text-[#d8f5a7] shadow-sm">
-                        {fileInfo?.kind === "image" ? (
-                          <ImageIcon size={20} />
-                        ) : (
-                          <FileText size={20} />
-                        )}
+                        {items[0].kind === "image" ? <ImageIcon size={20} /> : <FileText size={20} />}
                       </div>
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-bold text-[#22392c]" title={file.name}>
-                          {file.name}
+                        <p className="truncate text-sm font-bold text-[#22392c]">
+                          {items.length === 1
+                            ? items[0].name
+                            : `${items.length} Images Selected`}
                         </p>
                         <div className="flex flex-wrap items-center gap-2 text-xs text-[#6e8074]">
-                          <span className="font-medium">{formatFileSize(file.size)}</span>
+                          <span className="font-medium">{formatFileSize(totalBytes)}</span>
                           <span>•</span>
                           <span className="rounded-md bg-[#edf4ea] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#35684a]">
-                            {fileInfo?.label}
+                            {items.length === 1
+                              ? items[0].ext.toUpperCase()
+                              : `${items.length} PHOTOS`}
                           </span>
                           {detectedPdfPages !== null && (
                             <>
@@ -424,25 +514,43 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
                               </span>
                             </>
                           )}
+                          {isMultiImage && (
+                            <>
+                              <span>•</span>
+                              <span className="font-semibold text-[#256843]">
+                                {items.length} pages total
+                              </span>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
 
-                    {/* Actions: Replace & Remove */}
-                    <div className="flex items-center gap-2">
+                    {/* Actions: Add more images, Replace & Remove */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {items.every((i) => i.kind === "image") && (
+                        <button
+                          type="button"
+                          onClick={triggerAppendPicker}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-[10px] border border-[#23664b] bg-[#edf5e8] px-3 text-xs font-semibold text-[#23664b] transition hover:bg-[#e1f0db]"
+                          aria-label="Add more images"
+                        >
+                          <Plus size={13} /> Add more images
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={triggerFilePicker}
                         className="inline-flex h-8 items-center gap-1.5 rounded-[10px] border border-[#d7e2d5] bg-white px-3 text-xs font-semibold text-[#455c4d] transition hover:border-[#23664b] hover:text-[#23664b]"
                         aria-label="Replace selected file"
                       >
-                        <RefreshCw size={12} /> Replace file
+                        <RefreshCw size={12} /> Replace
                       </button>
                       <button
                         type="button"
-                        onClick={removeFile}
+                        onClick={removeAllFiles}
                         className="inline-flex h-8 items-center gap-1.5 rounded-[10px] border border-[#f0d4cb] bg-white px-3 text-xs font-semibold text-[#a34433] transition hover:bg-[#fff5f2] hover:text-[#bf3a23]"
-                        aria-label="Remove selected file"
+                        aria-label="Remove all files"
                       >
                         <Trash2 size={12} /> Remove
                       </button>
@@ -451,8 +559,54 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
 
                   {/* PREVIEW SECTION */}
                   <div className="mt-4">
-                    {/* 1. Image Preview */}
-                    {fileInfo?.kind === "image" && previewUrl && (
+                    {/* 1. Multiple Images Gallery Grid */}
+                    {isMultiImage && (
+                      <div>
+                        <div className="mb-2.5 flex items-center justify-between text-xs font-semibold text-[#5a7062]">
+                          <span>Image gallery ({items.length} files)</span>
+                          <span className="text-[11px] text-[#718276]">Click image to expand</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                          {items.map((item, index) => (
+                            <div
+                              key={item.id}
+                              className="group relative overflow-hidden rounded-xl border border-[#dfe7de] bg-white p-1.5 transition hover:shadow-md"
+                            >
+                              <div
+                                onClick={() => setLightboxIndex(index)}
+                                className="relative aspect-square w-full cursor-pointer overflow-hidden rounded-lg bg-[#f0f4ef]"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={item.previewUrl}
+                                  alt={item.name}
+                                  className="h-full w-full object-cover transition group-hover:scale-105"
+                                />
+                                <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 py-0.5 text-[9px] font-bold text-white">
+                                  Page {index + 1}
+                                </span>
+                              </div>
+                              <div className="mt-1.5 flex items-center justify-between px-0.5">
+                                <span className="truncate text-[11px] font-medium text-[#2d4234]" title={item.name}>
+                                  {item.name}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => removeItem(item.id)}
+                                  className="rounded p-0.5 text-[#9e5241] transition hover:bg-[#faeae6] hover:text-[#c4321d]"
+                                  aria-label={`Remove ${item.name}`}
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 2. Single Image Preview */}
+                    {isSingleImage && (
                       <div className="overflow-hidden rounded-xl border border-[#e2eae0] bg-white p-3 text-center">
                         <div className="flex items-center justify-between pb-2 text-[11px] font-semibold text-[#66776a]">
                           <span className="flex items-center gap-1.5">
@@ -460,52 +614,32 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
                           </span>
                           <button
                             type="button"
-                            onClick={() => setLightboxOpen(true)}
+                            onClick={() => setLightboxIndex(0)}
                             className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#23664b] hover:underline"
                           >
                             <Maximize2 size={12} /> Expand preview
                           </button>
                         </div>
                         <div className="relative flex max-h-[340px] min-h-[180px] w-full items-center justify-center overflow-hidden rounded-lg bg-[#f4f7f3]">
-                          {!imageLoadError ? (
-                            /* eslint-disable-next-line @next/next/no-img-element */
-                            <img
-                              src={previewUrl}
-                              alt={`Preview of ${file.name}`}
-                              onError={() => setImageLoadError(true)}
-                              onLoad={(e) => {
-                                const img = e.currentTarget;
-                                setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
-                              }}
-                              className="max-h-[320px] w-auto max-w-full rounded object-contain shadow-sm"
-                            />
-                          ) : (
-                            <div className="flex flex-col items-center justify-center p-6 text-center text-xs text-[#8c4b3a]">
-                              <AlertCircle size={24} className="text-[#a8442e]" />
-                              <p className="mt-2 font-semibold">Unable to display image preview</p>
-                              <p className="mt-1 text-[11px] text-[#718275]">
-                                The image may be corrupted or using an unrenderable format.
-                              </p>
-                            </div>
-                          )}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={items[0].previewUrl}
+                            alt={`Preview of ${items[0].name}`}
+                            className="max-h-[320px] w-auto max-w-full rounded object-contain shadow-sm"
+                          />
                         </div>
-                        {imageDimensions && (
-                          <p className="mt-2 text-[11px] text-[#78887c]">
-                            Dimensions: {imageDimensions.width} × {imageDimensions.height} px · Ready for printing
-                          </p>
-                        )}
                       </div>
                     )}
 
-                    {/* 2. PDF Document Preview */}
-                    {fileInfo?.kind === "pdf" && previewUrl && (
+                    {/* 3. PDF Document Preview */}
+                    {items.length === 1 && items[0].kind === "pdf" && (
                       <div className="overflow-hidden rounded-xl border border-[#e2eae0] bg-white p-3">
                         <div className="flex items-center justify-between pb-2.5 text-[11px] font-semibold text-[#66776a]">
                           <span className="flex items-center gap-1.5">
                             <FileCheck size={14} className="text-[#3a7553]" /> Preview
                           </span>
                           <a
-                            href={previewUrl}
+                            href={items[0].previewUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 font-semibold text-[#23664b] hover:underline"
@@ -515,18 +649,15 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
                         </div>
                         <div className="relative h-64 w-full overflow-hidden rounded-lg border border-[#e4ebe2] bg-[#f5f8f4] sm:h-72">
                           <object
-                            data={previewUrl}
+                            data={items[0].previewUrl}
                             type="application/pdf"
                             className="h-full w-full"
                           >
                             <div className="flex h-full flex-col items-center justify-center p-5 text-center text-xs text-[#6e7e72]">
                               <FileText size={36} className="text-[#3a7553]" />
-                              <p className="mt-2 font-bold text-[#2e4537]">{file.name}</p>
-                              <p className="mt-1 text-[#78887c]">
-                                Embedded browser PDF viewer is not active on this device.
-                              </p>
+                              <p className="mt-2 font-bold text-[#2e4537]">{items[0].name}</p>
                               <a
-                                href={previewUrl}
+                                href={items[0].previewUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[#23664b] px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-[#1a4f3a]"
@@ -536,19 +667,11 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
                             </div>
                           </object>
                         </div>
-                        <div className="mt-2.5 flex items-center justify-between text-[11px] text-[#6b7c70]">
-                          <span>
-                            {analyzingFile
-                              ? "Analyzing pages…"
-                              : `${detectedPdfPages ?? pageCount} ${(detectedPdfPages ?? pageCount) === 1 ? "page" : "pages"} detected`}
-                          </span>
-                          <span className="text-[#2b6845]">Scroll inside box to review pages</span>
-                        </div>
                       </div>
                     )}
 
-                    {/* 3. DOCX Non-previewable Card */}
-                    {fileInfo?.kind === "docx" && (
+                    {/* 4. DOCX Card */}
+                    {items.length === 1 && items[0].kind === "docx" && (
                       <div className="rounded-xl border border-[#d8e4f5] bg-[#f4f8fe] p-4 text-left">
                         <div className="flex items-start gap-3">
                           <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-[#2b579a] text-white">
@@ -559,18 +682,19 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
                             <p className="mt-1 text-xs leading-5 text-[#3b5883]">
                               In-browser page rendering is not available for Word files. Your document has been verified and will be printed cleanly by the shop.
                             </p>
-                            <p className="mt-2 text-xs font-semibold text-[#1f3f73]">
-                              👉 Please confirm the number of pages in Step 2 below to ensure accurate pricing.
-                            </p>
                           </div>
                         </div>
                       </div>
                     )}
 
-                    {/* 4. Confirmation Banner */}
+                    {/* Confirmation Banner */}
                     <div className="mt-3 flex items-center gap-2 rounded-lg bg-[#eaf4e6] px-3 py-2 text-xs font-semibold text-[#306843]">
                       <CheckCircle2 size={16} className="shrink-0 text-[#306843]" />
-                      <span>This is the file I want to print. Verified and ready.</span>
+                      <span>
+                        {items.length === 1
+                          ? "This is the file I want to print. Verified and ready."
+                          : `All ${items.length} images verified and ready for printing.`}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -594,7 +718,7 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
 
             {/* Paper Size Selection */}
             <div className="mt-5">
-              <div className="flex items-center justify-between mb-2">
+              <div className="mb-2 flex items-center justify-between">
                 <label htmlFor="paperSize" className="block text-xs font-bold uppercase tracking-[.1em] text-[#4d6354]">
                   Paper Size <span className="text-[#cb4d36]">*</span>
                 </label>
@@ -759,11 +883,13 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
                   <label htmlFor="pages-input" className="text-xs font-bold text-[#354c3e]">
                     Number of Pages
                   </label>
-                  {detectedPdfPages && (
-                    <span className="text-[10px] font-semibold text-[#3b7a54]">
-                      Detected: {detectedPdfPages} {detectedPdfPages === 1 ? "page" : "pages"}
-                    </span>
-                  )}
+                  <span className="text-[11px] text-[#6b7c70]">
+                    {items.length > 1
+                      ? `${items.length} images uploaded`
+                      : detectedPdfPages !== null
+                        ? "Auto-detected"
+                        : "Per copy"}
+                  </span>
                 </div>
                 <div className="mt-2.5 flex items-center justify-between gap-3">
                   <button
@@ -793,14 +919,17 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
                     <Plus size={15} />
                   </button>
                 </div>
-                <p className="mt-1.5 text-[11px] text-[#718276]">Pages in document to print</p>
+                <p className="mt-1.5 text-[11px] text-[#718276]">Pages in one complete set</p>
               </div>
 
               {/* Number of Copies Stepper */}
               <div className="rounded-[16px] border border-[#e1e8df] bg-[#fafcfa] p-3.5">
-                <label htmlFor="copies-input" className="block text-xs font-bold text-[#354c3e]">
-                  Number of Copies
-                </label>
+                <div className="flex items-center justify-between">
+                  <label htmlFor="copies-input" className="text-xs font-bold text-[#354c3e]">
+                    Number of Copies
+                  </label>
+                  <span className="text-[11px] text-[#6b7c70]">Sets to print</span>
+                </div>
                 <div className="mt-2.5 flex items-center justify-between gap-3">
                   <button
                     type="button"
@@ -858,7 +987,7 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
                 </span>
               </div>
 
-              {/* Exact format required: Print type, Pages, Price per page, Total */}
+              {/* Exact format required */}
               <div className="mt-3.5 space-y-2 text-xs sm:text-sm">
                 <div className="flex items-center justify-between text-[#4d6353]">
                   <span className="font-medium">Paper size:</span>
@@ -945,7 +1074,11 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
                 <div className="flex items-center justify-between">
                   <span className="text-[#64786b]">Document:</span>
                   <span className="max-w-[240px] truncate font-semibold text-[#1f372a] sm:max-w-[320px]">
-                    {file ? file.name : "No file uploaded yet"}
+                    {items.length === 0
+                      ? "No file uploaded yet"
+                      : items.length === 1
+                        ? items[0].name
+                        : `${items.length} images (${items.map((i) => i.name).slice(0, 2).join(", ")}${items.length > 2 ? "…" : ""})`}
                   </span>
                 </div>
 
@@ -981,7 +1114,6 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
 
             {/* Customer Inputs */}
             <div className="mt-5 space-y-4">
-              {/* Customer Name */}
               <div>
                 <label htmlFor="customerName" className="mb-1.5 block text-xs font-bold uppercase tracking-[.1em] text-[#4d6354]">
                   Your Name or Queue Identifier <span className="text-[#cb4d36]">*</span>
@@ -1003,20 +1135,19 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
                 </p>
               </div>
 
-              {/* Notes */}
               <div>
                 <label htmlFor="notes" className="mb-1.5 block text-xs font-bold uppercase tracking-[.1em] text-[#4d6354]">
-                  Special Instructions <span className="font-normal text-[#8c9c90]">(Optional)</span>
+                  Special Instructions (Optional)
                 </label>
-                <textarea
+                <input
                   id="notes"
                   name="notes"
-                  rows={2}
-                  maxLength={500}
+                  type="text"
+                  maxLength={250}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="e.g. Staple top-left, print back-to-back if possible..."
-                  className="w-full resize-y rounded-[14px] border border-[#d9e2d7] bg-white px-4 py-3 text-sm font-medium text-[#21382a] outline-none transition placeholder:text-[#95a498] focus:border-[#23664b] focus:ring-2 focus:ring-[#23664b]/20"
+                  placeholder="e.g. Please staple top-left, double-sided, or fit to page"
+                  className="h-11 w-full rounded-[14px] border border-[#d9e2d7] bg-white px-4 text-sm font-medium text-[#21382a] outline-none transition placeholder:text-[#95a498] focus:border-[#23664b] focus:ring-2 focus:ring-[#23664b]/20"
                 />
               </div>
             </div>
@@ -1025,10 +1156,10 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
             {error && (
               <div
                 role="alert"
-                className="mt-5 flex items-center gap-2.5 rounded-[14px] border border-[#f0cdc1] bg-[#fff6f2] p-3.5 text-xs font-medium text-[#a2432e]"
+                className="mt-5 flex items-start gap-2.5 rounded-xl border border-[#f2d3cb] bg-[#fff5f2] p-3.5 text-xs font-medium text-[#993b2a]"
               >
-                <AlertCircle size={16} className="shrink-0 text-[#b53a23]" />
-                <span>{error}</span>
+                <AlertCircle size={16} className="mt-0.5 shrink-0 text-[#b33722]" />
+                <p>{error}</p>
               </div>
             )}
 
@@ -1036,81 +1167,97 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
             <div className="mt-6">
               <button
                 type="submit"
-                disabled={submitting}
-                className="flex h-[56px] w-full items-center justify-between rounded-[16px] bg-[#23664b] px-6 text-sm font-bold text-white shadow-[0_10px_25px_rgba(35,102,75,.22)] transition hover:bg-[#1a4f3a] hover:shadow-[0_12px_28px_rgba(35,102,75,.28)] disabled:cursor-wait disabled:opacity-65"
+                disabled={submitting || items.length === 0 || analyzingFile}
+                className="group relative flex h-14 w-full items-center justify-between rounded-[18px] bg-[#23664b] px-6 text-base font-bold text-white shadow-[0_10px_30px_rgba(35,102,75,.28)] transition hover:bg-[#1a4f3a] active:scale-[.99] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {submitting ? (
-                  <span className="flex w-full items-center justify-center gap-2">
-                    <LoaderCircle size={18} className="animate-spin" />
-                    <span>Submitting order…</span>
-                  </span>
-                ) : (
-                  <>
-                    <span className="flex items-center gap-2">
-                      <Printer size={18} />
-                      <span>Submit Order</span>
-                    </span>
-                    <span className="flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-sm font-black text-white">
-                      <span>{formatPeso(totalPrice)}</span>
-                      <ArrowRight size={15} />
-                    </span>
-                  </>
-                )}
+                <span className="flex items-center gap-2">
+                  {submitting ? (
+                    <>
+                      <LoaderCircle size={18} className="animate-spin" />
+                      Sending to shop…
+                    </>
+                  ) : analyzingFile ? (
+                    <>
+                      <LoaderCircle size={18} className="animate-spin" />
+                      Analyzing files…
+                    </>
+                  ) : (
+                    <>
+                      Submit Order
+                      <ArrowRight size={18} className="transition group-hover:translate-x-1" />
+                    </>
+                  )}
+                </span>
+                <span className="rounded-full bg-white/20 px-3 py-1 text-sm font-black text-[#d8f5a7]">
+                  {formatPeso(totalPrice)}
+                </span>
               </button>
             </div>
 
-            {/* Privacy Guarantee */}
-            <div className="mt-4 flex items-center justify-center gap-2 text-center text-[11px] text-[#718274]">
-              <ShieldCheck size={14} className="text-[#3b7a54]" />
-              <span>Private upload · Automatically removed from servers after 24 hours</span>
+            <div className="mt-4 flex items-center justify-center gap-2 text-center text-xs text-[#718276]">
+              <ShieldCheck size={14} className="text-[#3b7252]" />
+              <span>Files are securely transferred and automatically removed after 24 hours.</span>
             </div>
           </section>
         </form>
-
-        {/* Footer */}
-        <footer className="mt-12 text-center text-xs text-[#8e9f93]">
-          PrintDrop Counter Dispatch · Simple, fast, account-free printing.
-        </footer>
       </div>
 
-      {/* Lightbox Modal for Image Preview */}
+      {/* LIGHTBOX MODAL */}
       <AnimatePresence>
-        {lightboxOpen && previewUrl && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Full size image preview"
-            onClick={() => setLightboxOpen(false)}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+        {lightboxIndex !== null && items[lightboxIndex] && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-xs"
+            onClick={() => setLightboxIndex(null)}
           >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
+            <div
+              className="relative max-h-[90vh] max-w-[90vw] overflow-hidden rounded-2xl bg-black"
               onClick={(e) => e.stopPropagation()}
-              className="relative max-h-[90vh] max-w-[90vw] overflow-hidden rounded-2xl bg-[#1b2b22] p-2 shadow-2xl"
             >
-              <div className="flex items-center justify-between border-b border-white/10 px-3 py-2 text-white">
-                <span className="truncate text-xs font-semibold">{file?.name}</span>
+              <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
+                <span className="rounded-md bg-black/60 px-2 py-1 text-xs font-semibold text-white">
+                  {lightboxIndex + 1} of {items.length}
+                </span>
                 <button
                   type="button"
-                  onClick={() => setLightboxOpen(false)}
-                  className="grid size-7 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white"
+                  onClick={() => setLightboxIndex(null)}
+                  className="rounded-full bg-black/60 p-2 text-white hover:bg-black/90"
                   aria-label="Close image preview"
                 >
-                  <X size={16} />
+                  <X size={18} />
                 </button>
               </div>
-              <div className="p-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={previewUrl}
-                  alt={file?.name ?? "Full preview"}
-                  className="max-h-[80vh] max-w-[85vw] rounded-lg object-contain"
-                />
-              </div>
-            </motion.div>
-          </div>
+
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={items[lightboxIndex].previewUrl}
+                alt={items[lightboxIndex].name}
+                className="max-h-[85vh] w-auto max-w-full rounded-2xl object-contain"
+              />
+
+              {items.length > 1 && (
+                <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/60 px-3 py-1.5 backdrop-blur-sm">
+                  <button
+                    type="button"
+                    onClick={() => setLightboxIndex((prev) => (prev! > 0 ? prev! - 1 : items.length - 1))}
+                    className="text-xs font-semibold text-white hover:underline"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-white/40">•</span>
+                  <button
+                    type="button"
+                    onClick={() => setLightboxIndex((prev) => (prev! < items.length - 1 ? prev! + 1 : 0))}
+                    className="text-xs font-semibold text-white hover:underline"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </main>

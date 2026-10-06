@@ -130,3 +130,23 @@ export async function deletePrintFile(reference: string): Promise<void> {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 }
+
+export async function deleteJobFiles(referenceOrManifest: string): Promise<void> {
+  if (referenceOrManifest.startsWith("[") || referenceOrManifest.startsWith("attachments:")) {
+    try {
+      const jsonStr = referenceOrManifest.startsWith("attachments:")
+        ? referenceOrManifest.slice(12)
+        : referenceOrManifest;
+      const parsed = JSON.parse(jsonStr) as Array<{ url?: string }>;
+      for (const item of parsed) {
+        if (item.url) {
+          await deletePrintFile(item.url).catch(() => {});
+        }
+      }
+      return;
+    } catch {
+      // Fall through to single reference
+    }
+  }
+  await deletePrintFile(referenceOrManifest);
+}

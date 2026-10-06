@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { and, eq, lt } from "drizzle-orm";
 import { db } from "@/db";
 import { printJobs } from "@/db/schema";
-import { deletePrintFile } from "@/lib/storage";
+import { deleteJobFiles } from "@/lib/storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,7 +45,7 @@ async function purgeExpiredJobs(request: Request) {
 
     for (const job of expired) {
       try {
-        await deletePrintFile(job.fileUrl);
+        await deleteJobFiles(job.fileUrl);
         const deleted = await db
           .delete(printJobs)
           .where(and(eq(printJobs.id, job.id), lt(printJobs.expiresAt, new Date())))

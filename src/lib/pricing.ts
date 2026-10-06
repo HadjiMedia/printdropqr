@@ -67,7 +67,10 @@ export function extractPageCount(notes: string | undefined | null): number {
 
 export function extractUserNotes(notes: string | undefined | null): string {
   if (!notes) return "";
-  return notes.replace(/\[(?:Pages|Page):\s*\d+\]\s*/gi, "").trim();
+  return notes
+    .replace(/\[(?:Pages|Page):\s*\d+\]\s*/gi, "")
+    .replace(/\[(?:Cancel|Cancelled|Reason):\s*[^\]]+\]\s*/gi, "")
+    .trim();
 }
 
 export function encodeNotesWithPages(userNotes: string | undefined | null, pageCount: number): string {
@@ -77,3 +80,104 @@ export function encodeNotesWithPages(userNotes: string | undefined | null, pageC
   if (!clean) return prefix;
   return `${prefix} ${clean}`.slice(0, 500);
 }
+
+export const COMMON_CANCELLATION_REASONS = [
+  "File unreadable / corrupted format",
+  "Out of selected paper stock",
+  "Customer requested cancellation",
+  "Page count / file content mismatch",
+  "Unclear printing instructions",
+  "Payment or verification required at counter",
+] as const;
+
+export function extractCancellationReason(notes: string | undefined | null): string | null {
+  if (!notes) return null;
+  const match = notes.match(/\[(?:Cancel|Cancelled|Reason):\s*([^\]]+)\]/i);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+  return null;
+}
+
+export function encodeCancellationReason(
+  existingNotes: string | undefined | null,
+  reason: string,
+): string {
+  const cleanReason = reason.trim().replace(/[\[\]]/g, "").slice(0, 140);
+  const tag = `[Cancel: ${cleanReason}]`;
+  const current = existingNotes ?? "";
+  if (/\[(?:Cancel|Cancelled|Reason):[^\]]+\]/i.test(current)) {
+    return current.replace(/\[(?:Cancel|Cancelled|Reason):[^\]]+\]/i, tag).slice(0, 500);
+  }
+  return `${current} ${tag}`.trim().slice(0, 500);
+}
+
+export type JobAttachment = {
+  index: number;
+  name: string;
+  size: number;
+  ext: string;
+  mime: string;
+  url?: string;
+};
+
+export function parseJobAttachments(
+  fileUrl: string | undefined | null,
+  defaultFileName: string,
+  defaultFileSize: number,
+): JobAttachment[] {
+  if (fileUrl && (fileUrl.startsWith("[") || fileUrl.startsWith("attachments:"))) {
+    try {
+      const jsonStr = fileUrl.startsWith("attachments:") ? fileUrl.slice(12) : fileUrl;
+      const parsed = JSON.parse(jsonStr) as Array<{
+        name?: string;
+        size?: number;
+        mime?: string;
+        ext?: string;
+        url?: string;
+        storageKey?: string;
+      }>;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((item, idx) => {
+          const name = item.name || `image_${idx + 1}.jpg`;
+          const ext = item.ext || name.split(".").pop()?.toLowerCase() || "jpg";
+          const mime =
+            item.mime || (ext === "png" ? "image/png" : "image/jpeg");
+          return {
+            index: idx,
+            name,
+            size: item.size || 0,
+            ext,
+            mime,
+            url: item.url,
+          };
+        });
+      }
+    } catch {
+      // Fall through to single attachment
+    }
+  }
+
+  const cleanName = defaultFileName || "print-file";
+  const ext = cleanName.split(".").pop()?.toLowerCase() || "pdf";
+  const mime =
+    ext === "pdf"
+      ? "application/pdf"
+      : ext === "docx"
+        ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        : ext === "png"
+          ? "image/png"
+          : "image/jpeg";
+
+  return [
+    {
+      index: 0,
+      name: cleanName,
+      size: defaultFileSize || 0,
+      ext,
+      mime,
+      url: fileUrl ?? undefined,
+    },
+  ];
+}
+

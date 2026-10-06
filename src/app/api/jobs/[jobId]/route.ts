@@ -3,9 +3,11 @@ import { DatabaseConfigurationError, db } from "@/db";
 import { printJobs, shops } from "@/db/schema";
 import {
   calculatePrintPrice,
+  extractCancellationReason,
   extractPageCount,
   extractUserNotes,
   getPricePerPage,
+  parseJobAttachments,
 } from "@/lib/pricing";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +29,7 @@ export async function GET(
         shopName: shops.name,
         queueNumber: printJobs.queueNumber,
         customerName: printJobs.customerName,
+        fileUrl: printJobs.fileUrl,
         fileName: printJobs.fileName,
         fileSize: printJobs.fileSize,
         paperSize: printJobs.paperSize,
@@ -46,16 +49,39 @@ export async function GET(
 
     const pageCount = extractPageCount(job.notes);
     const cleanNotes = extractUserNotes(job.notes);
+    const cancellationReason = extractCancellationReason(job.notes);
     const pricePerPage = getPricePerPage(job.colorType, job.paperSize);
     const totalPrice = calculatePrintPrice(pageCount, job.copies, job.colorType, job.paperSize);
+    const attachments = parseJobAttachments(job.fileUrl, job.fileName, job.fileSize).map((item) => ({
+      index: item.index,
+      name: item.name,
+      size: item.size,
+      ext: item.ext,
+      mime: item.mime,
+      previewUrl: `/api/jobs/${job.id}/preview?index=${item.index}`,
+    }));
 
     return Response.json(
       {
-        ...job,
+        id: job.id,
+        shopSlug: job.shopSlug,
+        shopName: job.shopName,
+        queueNumber: job.queueNumber,
+        customerName: job.customerName,
+        fileName: job.fileName,
+        fileSize: job.fileSize,
+        paperSize: job.paperSize,
+        colorType: job.colorType,
+        copies: job.copies,
+        status: job.status,
+        createdAt: job.createdAt,
+        expiresAt: job.expiresAt,
         pageCount,
         notes: cleanNotes,
+        cancellationReason,
         pricePerPage,
         totalPrice,
+        attachments,
       },
       { headers: { "Cache-Control": "no-store, private" } },
     );

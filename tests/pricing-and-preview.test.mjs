@@ -11,6 +11,10 @@ import {
   extractPageCount,
   extractUserNotes,
   encodeNotesWithPages,
+  encodeCancellationReason,
+  extractCancellationReason,
+  COMMON_CANCELLATION_REASONS,
+  parseJobAttachments,
 } from "../src/lib/pricing.ts";
 import {
   fileExtension,
@@ -192,3 +196,47 @@ test("extractPdfPageCount returns expected page count or fallback", () => {
   // Fallback for empty or corrupt buffer
   assert.equal(extractPdfPageCount(new Uint8Array([])), 1);
 });
+
+test("cancellation reason encoding, extraction, and note preservation", () => {
+  assert.ok(COMMON_CANCELLATION_REASONS.length >= 4);
+
+  // Initial job notes with page count
+  const initial = encodeNotesWithPages("Customer wants it ring-bound", 5);
+  assert.equal(initial, "[Pages: 5] Customer wants it ring-bound");
+  assert.equal(extractCancellationReason(initial), null);
+  assert.equal(extractUserNotes(initial), "Customer wants it ring-bound");
+
+  // Admin cancels job with reason
+  const cancelledNotes = encodeCancellationReason(initial, "Out of selected paper stock");
+  assert.equal(extractCancellationReason(cancelledNotes), "Out of selected paper stock");
+  assert.equal(extractPageCount(cancelledNotes), 5);
+  assert.equal(extractUserNotes(cancelledNotes), "Customer wants it ring-bound");
+
+  // Updating cancellation reason replaces prior reason cleanly
+  const updatedReason = encodeCancellationReason(cancelledNotes, "File unreadable / corrupted format");
+  assert.equal(extractCancellationReason(updatedReason), "File unreadable / corrupted format");
+  assert.equal(extractPageCount(updatedReason), 5);
+  assert.equal(extractUserNotes(updatedReason), "Customer wants it ring-bound");
+});
+
+test("parseJobAttachments parses single and multi-image JSON manifests", () => {
+  // Single document
+  const single = parseJobAttachments("local:uploads/shop/123.pdf", "invoice.pdf", 20480);
+  assert.equal(single.length, 1);
+  assert.equal(single[0].name, "invoice.pdf");
+  assert.equal(single[0].ext, "pdf");
+  assert.equal(single[0].size, 20480);
+
+  // Multi-image JSON manifest
+  const manifest = JSON.stringify([
+    { name: "photo1.png", size: 12000, ext: "png", mime: "image/png", url: "local:uploads/shop/img_0.png" },
+    { name: "photo2.jpg", size: 24000, ext: "jpg", mime: "image/jpeg", url: "local:uploads/shop/img_1.jpg" },
+  ]);
+  const parsed = parseJobAttachments(manifest, "2 Images: photo1.png, photo2.jpg", 36000);
+  assert.equal(parsed.length, 2);
+  assert.equal(parsed[0].name, "photo1.png");
+  assert.equal(parsed[0].ext, "png");
+  assert.equal(parsed[1].name, "photo2.jpg");
+  assert.equal(parsed[1].size, 24000);
+});
+

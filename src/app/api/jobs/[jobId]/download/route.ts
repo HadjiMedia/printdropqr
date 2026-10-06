@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { printJobs } from "@/db/schema";
 import { getPrintFile } from "@/lib/storage";
 import { safeFileName } from "@/lib/validation";
+import { parseJobAttachments } from "@/lib/pricing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ const contentTypeByExtension: Record<string, string> = {
 };
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ jobId: string }> },
 ) {
   if (!(await isAdminAuthenticated())) {
@@ -29,6 +30,10 @@ export async function GET(
     return Response.json({ error: "Print file not found." }, { status: 404 });
   }
 
+  const url = new URL(request.url);
+  const targetIndex = Math.max(0, parseInt(url.searchParams.get("index") || "0", 10) || 0);
+  const isInline = url.searchParams.get("inline") === "1";
+
   try {
     const [job] = await db
       .select({ fileUrl: printJobs.fileUrl, fileName: printJobs.fileName, fileSize: printJobs.fileSize })
@@ -38,18 +43,26 @@ export async function GET(
 
     if (!job) return Response.json({ error: "Print file not found or expired." }, { status: 404 });
 
-    const file = await getPrintFile(job.fileUrl);
-    const fileName = safeFileName(job.fileName);
-    const extension = fileName.split(".").pop()?.toLowerCase() ?? "";
+    const attachments = parseJobAttachments(job.fileUrl, job.fileName, job.fileSize);
+    const attachment = attachments[targetIndex] || attachments[0];
+
+    if (!attachment || !attachment.url) {
+      return Response.json({ error: "Attachment not found." }, { status: 404 });
+    }
+
+    const file = await getPrintFile(attachment.url);
+    const fileName = safeFileName(attachment.name);
+    const extension = attachment.ext || fileName.split(".").pop()?.toLowerCase() || "";
+    const dispositionType = isInline ? "inline" : "attachment";
     const dispositionName = encodeURIComponent(fileName).replace(/[!'()*]/g, (character) =>
       `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
     );
 
     return new Response(file.body, {
       headers: {
-        "Content-Type": file.contentType || contentTypeByExtension[extension] || "application/octet-stream",
-        "Content-Disposition": `attachment; filename*=UTF-8''${dispositionName}`,
-        "Content-Length": String(job.fileSize),
+        "Content-Type": file.contentType || attachment.mime || contentTypeByExtension[extension] || "application/octet-stream",
+        "Content-Disposition": `${dispositionType}; filename*=UTF-8''${dispositionName}`,
+        "Content-Length": attachment.size ? String(attachment.size) : String(job.fileSize),
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
       },
