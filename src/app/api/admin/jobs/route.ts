@@ -49,8 +49,8 @@ export async function GET(request: Request) {
         ...job,
         pageCount,
         notes: extractUserNotes(job.notes),
-        pricePerPage: getPricePerPage(job.colorType),
-        totalPrice: calculatePrintPrice(pageCount, job.copies, job.colorType),
+        pricePerPage: getPricePerPage(job.colorType, job.paperSize),
+        totalPrice: calculatePrintPrice(pageCount, job.copies, job.colorType, job.paperSize),
       };
     });
 

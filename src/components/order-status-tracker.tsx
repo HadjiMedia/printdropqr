@@ -21,6 +21,7 @@ import {
   extractPageCount,
   extractUserNotes,
   formatPeso,
+  getPaperSizeLabel,
   getPricePerPage,
 } from "@/lib/pricing";
 
@@ -90,13 +91,16 @@ export default function OrderStatusTracker({ job: initialJob }: { job: TrackedJo
 
   const currentIndex = statusIndex(job.status);
   const wasCancelled = job.status === "CANCELLED";
-  const displayPaper = job.paperSize === "LETTER" ? "Letter" : job.paperSize;
-  const colorLabel = job.colorType === "BW" ? "Black & White (₱5/page)" : "Colored (₱8/page)";
+  const displayPaper = getPaperSizeLabel(job.paperSize);
 
   const pageCount = job.pageCount ?? extractPageCount(job.notes);
   const cleanNotes = extractUserNotes(job.notes);
-  const pricePerPage = job.pricePerPage ?? getPricePerPage(job.colorType);
-  const totalPrice = job.totalPrice ?? calculatePrintPrice(pageCount, job.copies, job.colorType);
+  const pricePerPage = job.pricePerPage ?? getPricePerPage(job.colorType, job.paperSize);
+  const totalPrice = job.totalPrice ?? calculatePrintPrice(pageCount, job.copies, job.colorType, job.paperSize);
+  const colorLabel =
+    job.colorType === "BW"
+      ? `Black & White (${formatPeso(pricePerPage)}/page)`
+      : `Colored (${formatPeso(pricePerPage)}/page)`;
 
   return (
     <main className="min-h-screen bg-[#f7f8f5] px-4 pb-14 pt-6 sm:px-6 sm:pt-8">

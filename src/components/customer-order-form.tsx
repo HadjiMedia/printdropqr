@@ -35,8 +35,10 @@ import {
   COLOR,
   calculatePrintPrice,
   formatPeso,
+  getPaperSizeLabel,
   getPricePerPage,
   type ColorType,
+  type PaperSize,
 } from "@/lib/pricing";
 import { extractPdfPageCount } from "@/lib/pdf";
 
@@ -203,8 +205,10 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
   }
 
   // Automatic pricing calculation using centralized functions
-  const pricePerPage = getPricePerPage(colorType);
-  const totalPrice = calculatePrintPrice(pageCount, copies, colorType);
+  const pricePerPage = getPricePerPage(colorType, paperSize);
+  const totalPrice = calculatePrintPrice(pageCount, copies, colorType, paperSize);
+  const bwRate = getPricePerPage("BW", paperSize);
+  const colorRate = getPricePerPage("COLOR", paperSize);
   const totalSheetsToPrint = pageCount * copies;
 
   async function submitOrder(event: FormEvent<HTMLFormElement>) {
@@ -316,7 +320,7 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
             Send documents.<br className="hidden sm:inline" /> Pick up at the counter.
           </h1>
           <p className="mt-2 text-sm leading-6 text-[#697a6f] sm:text-[15px]">
-            Upload your file, review its preview, choose Black &amp; White (₱5) or Color (₱8), and receive your live queue number.
+            Upload your file, preview it, choose your paper size and print type, and receive your live queue number.
           </p>
         </div>
 
@@ -588,13 +592,110 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
               </span>
             </div>
 
+            {/* Paper Size Selection */}
+            <div className="mt-5">
+              <div className="flex items-center justify-between mb-2">
+                <label htmlFor="paperSize" className="block text-xs font-bold uppercase tracking-[.1em] text-[#4d6354]">
+                  Paper Size <span className="text-[#cb4d36]">*</span>
+                </label>
+                <span className="text-[11px] font-semibold text-[#5a7062]">
+                  {getPaperSizeLabel(paperSize)}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {/* Short / Letter */}
+                <button
+                  type="button"
+                  onClick={() => setPaperSize("LETTER")}
+                  className={`flex flex-col justify-between rounded-[16px] border p-3.5 text-left transition ${
+                    paperSize === "LETTER"
+                      ? "border-[#23664b] bg-[#f3f8f1] ring-2 ring-[#23664b]/20"
+                      : "border-[#dfe6de] bg-white hover:border-[#9ab4a1] hover:bg-[#fafcfa]"
+                  }`}
+                  aria-pressed={paperSize === "LETTER"}
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-bold text-[#1f372a]">Short / Letter</span>
+                      <span className="rounded-md bg-[#edf4ea] px-1.5 py-0.5 text-[10px] font-bold text-[#35684a]">8.5 × 11 in</span>
+                    </div>
+                    <p className="mt-1 text-xs text-[#6e8074]">Short bond paper</p>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between border-t border-[#e2eae0] pt-2 text-[11px] font-semibold text-[#3b5c46]">
+                    <span>B&amp;W: ₱3</span>
+                    <span>Color: ₱6</span>
+                  </div>
+                </button>
+
+                {/* A4 */}
+                <button
+                  type="button"
+                  onClick={() => setPaperSize("A4")}
+                  className={`flex flex-col justify-between rounded-[16px] border p-3.5 text-left transition ${
+                    paperSize === "A4"
+                      ? "border-[#23664b] bg-[#f3f8f1] ring-2 ring-[#23664b]/20"
+                      : "border-[#dfe6de] bg-white hover:border-[#9ab4a1] hover:bg-[#fafcfa]"
+                  }`}
+                  aria-pressed={paperSize === "A4"}
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-bold text-[#1f372a]">A4</span>
+                      <span className="rounded-md bg-[#edf4ea] px-1.5 py-0.5 text-[10px] font-bold text-[#35684a]">8.27 × 11.69 in</span>
+                    </div>
+                    <p className="mt-1 text-xs text-[#6e8074]">Standard size</p>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between border-t border-[#e2eae0] pt-2 text-[11px] font-semibold text-[#3b5c46]">
+                    <span>B&amp;W: ₱5</span>
+                    <span>Color: ₱8</span>
+                  </div>
+                </button>
+
+                {/* Long / Legal */}
+                <button
+                  type="button"
+                  onClick={() => setPaperSize("LEGAL")}
+                  className={`flex flex-col justify-between rounded-[16px] border p-3.5 text-left transition ${
+                    paperSize === "LEGAL"
+                      ? "border-[#23664b] bg-[#f3f8f1] ring-2 ring-[#23664b]/20"
+                      : "border-[#dfe6de] bg-white hover:border-[#9ab4a1] hover:bg-[#fafcfa]"
+                  }`}
+                  aria-pressed={paperSize === "LEGAL"}
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-bold text-[#1f372a]">Long / Legal</span>
+                      <span className="rounded-md bg-[#edf4ea] px-1.5 py-0.5 text-[10px] font-bold text-[#35684a]">8.5 × 13 in</span>
+                    </div>
+                    <p className="mt-1 text-xs text-[#6e8074]">Long bond paper</p>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between border-t border-[#e2eae0] pt-2 text-[11px] font-semibold text-[#3b5c46]">
+                    <span>B&amp;W: ₱7</span>
+                    <span>Color: ₱10</span>
+                  </div>
+                </button>
+              </div>
+
+              <select
+                id="paperSize"
+                value={paperSize}
+                onChange={(e) => setPaperSize(e.target.value as PaperSize)}
+                className="sr-only"
+                aria-label="Select paper size"
+              >
+                <option value="LETTER">Short / Letter (8.5 × 11 in)</option>
+                <option value="A4">A4 (8.27 × 11.69 in)</option>
+                <option value="LEGAL">Long / Legal (8.5 × 13 in)</option>
+              </select>
+            </div>
+
             {/* Print Type Selection */}
             <div className="mt-5">
               <label className="mb-2 block text-xs font-bold uppercase tracking-[.1em] text-[#4d6354]">
                 Print Type <span className="text-[#cb4d36]">*</span>
               </label>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {/* Black & White — ₱5/page */}
+                {/* Black & White */}
                 <button
                   type="button"
                   onClick={() => setColorType("BW")}
@@ -610,18 +711,18 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
                       B/W
                     </span>
                     <div>
-                      <p className="text-sm font-bold text-[#1f372a]">Black &amp; White — ₱{BLACK_AND_WHITE}/page</p>
+                      <p className="text-sm font-bold text-[#1f372a]">Black &amp; White — ₱{bwRate}/page</p>
                       <p className="text-xs text-[#6e8074]">Standard crisp text &amp; documents</p>
                     </div>
                   </div>
                   <div className="text-right">
                     <span className="inline-block rounded-full bg-[#e3ece0] px-2.5 py-1 text-xs font-bold text-[#2a593c]">
-                      ₱{BLACK_AND_WHITE}/page
+                      ₱{bwRate}/page
                     </span>
                   </div>
                 </button>
 
-                {/* Color — ₱8/page */}
+                {/* Color */}
                 <button
                   type="button"
                   onClick={() => setColorType("COLOR")}
@@ -637,13 +738,13 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
                       <Sparkles size={17} />
                     </span>
                     <div>
-                      <p className="text-sm font-bold text-[#1f372a]">Color — ₱{COLOR}/page</p>
+                      <p className="text-sm font-bold text-[#1f372a]">Color — ₱{colorRate}/page</p>
                       <p className="text-xs text-[#6e8074]">Vibrant graphics &amp; photos</p>
                     </div>
                   </div>
                   <div className="text-right">
                     <span className="inline-block rounded-full bg-[#fcece6] px-2.5 py-1 text-xs font-bold text-[#b5462d]">
-                      ₱{COLOR}/page
+                      ₱{colorRate}/page
                     </span>
                   </div>
                 </button>
@@ -731,23 +832,6 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
                 <p className="mt-1.5 text-[11px] text-[#718276]">Total printed sets of this document</p>
               </div>
             </div>
-
-            {/* Paper Size */}
-            <div className="mt-4">
-              <label htmlFor="paperSize" className="mb-1.5 block text-xs font-bold uppercase tracking-[.1em] text-[#4d6354]">
-                Paper Size
-              </label>
-              <select
-                id="paperSize"
-                value={paperSize}
-                onChange={(e) => setPaperSize(e.target.value as "A4" | "LETTER" | "LEGAL")}
-                className="h-11 w-full rounded-[14px] border border-[#d9e2d7] bg-white px-3.5 text-sm font-semibold text-[#253d2d] outline-none transition focus:border-[#23664b] focus:ring-2 focus:ring-[#23664b]/20"
-              >
-                <option value="A4">A4 (210 × 297 mm) — Standard</option>
-                <option value="LETTER">Letter (8.5 × 11 in) — Short</option>
-                <option value="LEGAL">Legal (8.5 × 14 in) — Long</option>
-              </select>
-            </div>
           </section>
 
           {/* STEP 3: AUTOMATIC PRINTING PRICE CALCULATION */}
@@ -776,6 +860,13 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
 
               {/* Exact format required: Print type, Pages, Price per page, Total */}
               <div className="mt-3.5 space-y-2 text-xs sm:text-sm">
+                <div className="flex items-center justify-between text-[#4d6353]">
+                  <span className="font-medium">Paper size:</span>
+                  <span className="font-bold text-[#1f372a]">
+                    {getPaperSizeLabel(paperSize)}
+                  </span>
+                </div>
+
                 <div className="flex items-center justify-between text-[#4d6353]">
                   <span className="font-medium">Print type:</span>
                   <span className="font-bold text-[#1f372a]">
@@ -861,7 +952,7 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
                 <div className="flex items-center justify-between">
                   <span className="text-[#64786b]">Print Type:</span>
                   <span className="font-semibold text-[#1f372a]">
-                    {colorType === "COLOR" ? "Color — ₱8/page" : "Black & White — ₱5/page"}
+                    {colorType === "COLOR" ? `Color — ${formatPeso(pricePerPage)}/page` : `Black & White — ${formatPeso(pricePerPage)}/page`}
                   </span>
                 </div>
 

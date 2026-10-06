@@ -3,9 +3,11 @@ import test from "node:test";
 import {
   BLACK_AND_WHITE,
   COLOR,
+  PAPER_PRICING,
   calculatePrintPrice,
   formatPeso,
   getPricePerPage,
+  getPaperSizeLabel,
   extractPageCount,
   extractUserNotes,
   encodeNotesWithPages,
@@ -21,10 +23,72 @@ import {
 import { extractPdfPageCount } from "../src/lib/pdf.ts";
 
 test("centralized pricing configuration values match specification", () => {
-  assert.equal(BLACK_AND_WHITE, 5, "Black & White rate must be 5 PHP per page");
-  assert.equal(COLOR, 8, "Color rate must be 8 PHP per page");
-  assert.equal(getPricePerPage("BW"), 5);
-  assert.equal(getPricePerPage("COLOR"), 8);
+  assert.equal(BLACK_AND_WHITE, 5, "Default A4 Black & White rate must be 5 PHP per page");
+  assert.equal(COLOR, 8, "Default A4 Color rate must be 8 PHP per page");
+  assert.equal(PAPER_PRICING.LETTER.BW, 3);
+  assert.equal(PAPER_PRICING.LETTER.COLOR, 6);
+  assert.equal(PAPER_PRICING.A4.BW, 5);
+  assert.equal(PAPER_PRICING.A4.COLOR, 8);
+  assert.equal(PAPER_PRICING.LEGAL.BW, 7);
+  assert.equal(PAPER_PRICING.LEGAL.COLOR, 10);
+
+  assert.equal(getPricePerPage("BW", "LETTER"), 3);
+  assert.equal(getPricePerPage("COLOR", "LETTER"), 6);
+  assert.equal(getPricePerPage("BW", "A4"), 5);
+  assert.equal(getPricePerPage("COLOR", "A4"), 8);
+  assert.equal(getPricePerPage("BW", "LEGAL"), 7);
+  assert.equal(getPricePerPage("COLOR", "LEGAL"), 10);
+});
+
+test("paper size labels match expected naming and dimensions", () => {
+  assert.ok(getPaperSizeLabel("LETTER").includes("Letter"));
+  assert.ok(getPaperSizeLabel("LETTER").includes("8.5 × 11"));
+  assert.ok(getPaperSizeLabel("A4").includes("A4"));
+  assert.ok(getPaperSizeLabel("A4").includes("8.27 × 11.69"));
+  assert.ok(getPaperSizeLabel("LEGAL").includes("Legal"));
+  assert.ok(getPaperSizeLabel("LEGAL").includes("8.5 × 13"));
+});
+
+test("pricing accuracy: Short / Letter (8.5 × 11 in)", () => {
+  // B&W: ₱3/page
+  assert.equal(calculatePrintPrice(1, 1, "BW", "LETTER"), 3);
+  assert.equal(calculatePrintPrice(5, 1, "BW", "LETTER"), 15);
+  assert.equal(calculatePrintPrice(10, 1, "BW", "LETTER"), 30);
+  assert.equal(calculatePrintPrice(5, 2, "BW", "LETTER"), 30); // 5 × 2 × ₱3 = ₱30
+
+  // Colored: ₱6/page
+  assert.equal(calculatePrintPrice(1, 1, "COLOR", "LETTER"), 6);
+  assert.equal(calculatePrintPrice(5, 1, "COLOR", "LETTER"), 30);
+  assert.equal(calculatePrintPrice(10, 1, "COLOR", "LETTER"), 60);
+  assert.equal(calculatePrintPrice(5, 2, "COLOR", "LETTER"), 60); // 5 × 2 × ₱6 = ₱60
+});
+
+test("pricing accuracy: A4 (8.27 × 11.69 in)", () => {
+  // B&W: ₱5/page (default)
+  assert.equal(calculatePrintPrice(1, 1, "BW", "A4"), 5);
+  assert.equal(calculatePrintPrice(5, 1, "BW", "A4"), 25);
+  assert.equal(calculatePrintPrice(10, 1, "BW", "A4"), 50);
+  assert.equal(calculatePrintPrice(5, 2, "BW", "A4"), 50); // 5 × 2 × ₱5 = ₱50
+
+  // Colored: ₱8/page (default)
+  assert.equal(calculatePrintPrice(1, 1, "COLOR", "A4"), 8);
+  assert.equal(calculatePrintPrice(5, 1, "COLOR", "A4"), 40);
+  assert.equal(calculatePrintPrice(10, 1, "COLOR", "A4"), 80);
+  assert.equal(calculatePrintPrice(5, 2, "COLOR", "A4"), 80); // 5 × 2 × ₱8 = ₱80
+});
+
+test("pricing accuracy: Long / Legal (8.5 × 13 in)", () => {
+  // B&W: ₱7/page
+  assert.equal(calculatePrintPrice(1, 1, "BW", "LEGAL"), 7);
+  assert.equal(calculatePrintPrice(5, 1, "BW", "LEGAL"), 35);
+  assert.equal(calculatePrintPrice(10, 1, "BW", "LEGAL"), 70);
+  assert.equal(calculatePrintPrice(5, 2, "BW", "LEGAL"), 70); // 5 × 2 × ₱7 = ₱70
+
+  // Colored: ₱10/page
+  assert.equal(calculatePrintPrice(1, 1, "COLOR", "LEGAL"), 10);
+  assert.equal(calculatePrintPrice(5, 1, "COLOR", "LEGAL"), 50);
+  assert.equal(calculatePrintPrice(10, 1, "COLOR", "LEGAL"), 100);
+  assert.equal(calculatePrintPrice(5, 2, "COLOR", "LEGAL"), 100); // 5 × 2 × ₱10 = ₱100
 });
 
 test("pricing accuracy: Black & White single and multiple pages", () => {

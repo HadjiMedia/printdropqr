@@ -46,8 +46,8 @@ export async function GET(
 
     const pageCount = extractPageCount(job.notes);
     const cleanNotes = extractUserNotes(job.notes);
-    const pricePerPage = getPricePerPage(job.colorType);
-    const totalPrice = calculatePrintPrice(pageCount, job.copies, job.colorType);
+    const pricePerPage = getPricePerPage(job.colorType, job.paperSize);
+    const totalPrice = calculatePrintPrice(pageCount, job.copies, job.colorType, job.paperSize);
 
     return Response.json(
       {

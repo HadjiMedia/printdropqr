@@ -1,26 +1,54 @@
-export const BLACK_AND_WHITE = 5;
-export const COLOR = 8;
-
-export const PRINT_PRICING = {
-  BW: BLACK_AND_WHITE,
-  COLOR: COLOR,
-} as const;
-
+export type PaperSize = "LETTER" | "A4" | "LEGAL";
 export type ColorType = "BW" | "COLOR";
 
-export function getPricePerPage(colorType: ColorType): number {
-  return colorType === "COLOR" ? PRINT_PRICING.COLOR : PRINT_PRICING.BW;
+export const PAPER_PRICING: Record<PaperSize, Record<ColorType, number>> = {
+  LETTER: {
+    BW: 3,
+    COLOR: 6,
+  },
+  A4: {
+    BW: 5,
+    COLOR: 8,
+  },
+  LEGAL: {
+    BW: 7,
+    COLOR: 10,
+  },
+} as const;
+
+export const BLACK_AND_WHITE = PAPER_PRICING.A4.BW;
+export const COLOR = PAPER_PRICING.A4.COLOR;
+
+export const PRINT_PRICING = PAPER_PRICING.A4;
+
+export function getPricePerPage(colorType: ColorType, paperSize: PaperSize = "A4"): number {
+  const sizeRates = PAPER_PRICING[paperSize] ?? PAPER_PRICING.A4;
+  return sizeRates[colorType] ?? (colorType === "COLOR" ? 8 : 5);
 }
 
 export function calculatePrintPrice(
   pages: number | string | undefined | null,
   copies: number | string | undefined | null,
   colorType: ColorType,
+  paperSize: PaperSize = "A4",
 ): number {
   const safePages = Math.max(1, Math.floor(Number(pages) || 1));
   const safeCopies = Math.max(1, Math.floor(Number(copies) || 1));
-  const rate = getPricePerPage(colorType);
+  const rate = getPricePerPage(colorType, paperSize);
   return safePages * safeCopies * rate;
+}
+
+export function getPaperSizeLabel(paperSize: PaperSize): string {
+  switch (paperSize) {
+    case "LETTER":
+      return "Short / Letter (8.5 × 11 in)";
+    case "A4":
+      return "A4 (8.27 × 11.69 in)";
+    case "LEGAL":
+      return "Long / Legal (8.5 × 13 in)";
+    default:
+      return "A4 (8.27 × 11.69 in)";
+  }
 }
 
 export function formatPeso(amount: number): string {

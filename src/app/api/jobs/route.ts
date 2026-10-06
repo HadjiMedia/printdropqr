@@ -95,8 +95,8 @@ export async function POST(request: Request) {
     const createdAt = new Date();
     const expiresAt = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000);
     const storedNotes = encodeNotesWithPages(parsed.data.notes, pageCount);
-    const totalPrice = calculatePrintPrice(pageCount, parsed.data.copies, parsed.data.colorType);
-    const pricePerPage = getPricePerPage(parsed.data.colorType);
+    const totalPrice = calculatePrintPrice(pageCount, parsed.data.copies, parsed.data.colorType, parsed.data.paperSize);
+    const pricePerPage = getPricePerPage(parsed.data.colorType, parsed.data.paperSize);
 
     try {
       const created = await db.transaction(async (tx) => {
@@ -138,6 +138,7 @@ export async function POST(request: Request) {
           status: "WAITING",
           pageCount,
           copies: parsed.data.copies,
+          paperSize: parsed.data.paperSize,
           colorType: parsed.data.colorType,
           pricePerPage,
           totalPrice,

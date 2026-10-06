@@ -35,6 +35,7 @@ import {
   extractPageCount,
   extractUserNotes,
   formatPeso,
+  getPricePerPage,
 } from "@/lib/pricing";
 
 type JobStatus = "WAITING" | "PRINTING" | "DONE" | "CANCELLED";
@@ -468,8 +469,12 @@ export default function AdminDashboard({ shops: initialShops, selectedSlug: init
                   <tbody className="divide-y divide-[#edf0ec]">
                     {visibleJobs.map((job) => {
                       const pageCount = job.pageCount ?? extractPageCount(job.notes);
-                      const totalPrice = job.totalPrice ?? calculatePrintPrice(pageCount, job.copies, job.colorType);
+                      const pricePerPage = job.pricePerPage ?? getPricePerPage(job.colorType, job.paperSize);
+                      const totalPrice = job.totalPrice ?? calculatePrintPrice(pageCount, job.copies, job.colorType, job.paperSize);
                       const cleanNotes = extractUserNotes(job.notes);
+
+                      const paperLabel =
+                        job.paperSize === "LETTER" ? "Short (Letter)" : job.paperSize === "LEGAL" ? "Long (Legal)" : "A4";
 
                       return (
                         <tr key={job.id} className="transition hover:bg-[#fbfcfa]">
@@ -494,7 +499,7 @@ export default function AdminDashboard({ shops: initialShops, selectedSlug: init
                           <td className="px-4 py-4">
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-medium text-[#596b5f]">
-                                {job.paperSize === "LETTER" ? "Letter" : job.paperSize} · {job.colorType === "BW" ? "B&W (₱5)" : "Color (₱8)"}
+                                {paperLabel} · {job.colorType === "BW" ? `B&W (${formatPeso(pricePerPage)})` : `Color (${formatPeso(pricePerPage)})`}
                               </span>
                               <span className="rounded-md bg-[#eaf4e7] px-1.5 py-0.5 text-[10px] font-bold text-[#2a593a]">
                                 {formatPeso(totalPrice)}
@@ -722,13 +727,17 @@ function JobCard({
       </div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-[#718078]">
-          <span>{job.paperSize === "LETTER" ? "Letter" : job.paperSize}</span>
+          <span>{job.paperSize === "LETTER" ? "Short (Letter)" : job.paperSize === "LEGAL" ? "Long (Legal)" : "A4"}</span>
           <span>·</span>
-          <span>{job.colorType === "BW" ? "B&W (₱5)" : "Color (₱8)"}</span>
+          <span>
+            {job.colorType === "BW"
+              ? `B&W (${formatPeso(getPricePerPage("BW", job.paperSize))})`
+              : `Color (${formatPeso(getPricePerPage("COLOR", job.paperSize))})`}
+          </span>
           <span>·</span>
           <span>{job.pageCount ?? 1}p × {job.copies} {job.copies === 1 ? "copy" : "copies"}</span>
           <span className="rounded-md bg-[#eaf4e7] px-1.5 py-0.5 text-[10px] font-bold text-[#2a593a]">
-            {formatPeso(job.totalPrice ?? calculatePrintPrice(job.pageCount ?? 1, job.copies, job.colorType))}
+            {formatPeso(job.totalPrice ?? calculatePrintPrice(job.pageCount ?? 1, job.copies, job.colorType, job.paperSize))}
           </span>
         </div>
         <div className="flex items-center gap-2">
