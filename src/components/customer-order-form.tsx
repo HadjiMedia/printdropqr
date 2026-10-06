@@ -888,7 +888,7 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
                       ? `${items.length} images uploaded`
                       : detectedPdfPages !== null
                         ? "Auto-detected"
-                        : "Per copy"}
+                        : "Per set"}
                   </span>
                 </div>
                 <div className="mt-2.5 flex items-center justify-between gap-3">
@@ -936,7 +936,7 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
                     onClick={() => setCopies((prev) => Math.max(1, prev - 1))}
                     disabled={copies <= 1}
                     className="grid size-9 place-items-center rounded-xl border border-[#d6dfd5] bg-white text-[#455c4d] shadow-sm transition hover:bg-[#f1f6ef] disabled:opacity-40"
-                    aria-label="Decrease copy count"
+                    aria-label="Decrease quantity"
                   >
                     <Minus size={15} />
                   </button>
@@ -953,7 +953,7 @@ export default function CustomerOrderForm({ shop }: { shop: ShopInfo }) {
                     type="button"
                     onClick={() => setCopies((prev) => Math.min(MAX_COPIES, prev + 1))}
                     className="grid size-9 place-items-center rounded-xl border border-[#d6dfd5] bg-white text-[#455c4d] shadow-sm transition hover:bg-[#f1f6ef]"
-                    aria-label="Increase copy count"
+                    aria-label="Increase quantity"
                   >
                     <Plus size={15} />
                   </button>

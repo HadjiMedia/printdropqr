@@ -73,6 +73,7 @@ type Job = {
   copies: number;
   notes: string;
   status: JobStatus;
+  shopSlug?: string;
   cancellationReason?: string | null;
   attachments?: JobAttachment[];
   createdAt: string;
@@ -355,15 +356,16 @@ export default function AdminDashboard({ shops: initialShops, selectedSlug: init
               <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#829087]" />
             </div>
 
-            {/* PAGE ACTION / NAVIGATION: Open Customer Storefront (replaces Copy button) */}
+            {/* PAGE ACTION / NAVIGATION: Open Customer Storefront */}
             {selectedShop && (
               <a
                 href={`/${selectedShop.slug}`}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#23664b] bg-[#edf5e8] px-4 text-xs font-bold text-[#23664b] shadow-xs transition hover:bg-[#e1f0db]"
+                title="Open shop storefront page"
               >
-                Open Customer Storefront <ExternalLink size={13} />
+                <ExternalLink size={13} /> Page
               </a>
             )}
 
@@ -750,6 +752,17 @@ export default function AdminDashboard({ shops: initialShops, selectedSlug: init
 
                       {/* Right: Quick Action Buttons */}
                       <div className="flex flex-wrap items-center gap-2 self-end lg:self-start">
+                        {/* Page Action Button: Navigates to print job details page */}
+                        <a
+                          href={`/${job.shopSlug || selectedShop?.slug}/status/${job.id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[#d8e3d6] bg-white px-3 text-xs font-bold text-[#355240] shadow-xs transition hover:bg-[#f3f7f1]"
+                          title="Open print job page details"
+                        >
+                          <ExternalLink size={13} /> Page
+                        </a>
+
                         {/* Download / View File */}
                         {hasMultiImages ? (
                           <button

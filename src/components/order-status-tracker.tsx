@@ -282,12 +282,23 @@ export default function OrderStatusTracker({ job: initialJob }: { job: TrackedJo
 
       {/* Main Content Card */}
       <section className="mx-auto mt-6 max-w-[690px] sm:mt-10">
-        <Link
-          href={`/${job.shopSlug}`}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-[#78867e] transition hover:text-[#23664b]"
-        >
-          <ArrowLeft size={15} /> Back to {job.shopName}
-        </Link>
+        <div className="flex items-center justify-between">
+          <Link
+            href={`/${job.shopSlug}`}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-[#78867e] transition hover:text-[#23664b]"
+          >
+            <ArrowLeft size={15} /> Back to {job.shopName}
+          </Link>
+
+          {/* PAGE ACTION / NAVIGATION: Open Print Job Page Details */}
+          <a
+            href={`/${job.shopSlug}/status/${job.id}`}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-[#dfe7de] bg-white px-3 py-1.5 text-xs font-bold text-[#23664b] shadow-xs transition hover:bg-[#edf5e8]"
+            title="Open print job page details"
+          >
+            <ExternalLink size={13} /> Page
+          </a>
+        </div>
 
         {/* REAL-TIME NOTIFICATION POPUP BANNER */}
         <AnimatePresence>

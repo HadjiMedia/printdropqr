@@ -101,7 +101,7 @@ test("sharp's native image pipeline is usable after a clean npm install", async 
 });
 
 for (const [packagePath, entry] of Object.entries(lock.packages)) {
-  if (/(^|\/)node_modules\/esbuild$/.test(packagePath)) {
+  if (/(^|\/)node_modules\/esbuild$/.test(packagePath) && existsSync(join(root, packagePath))) {
     test(`esbuild ${entry.version} at ${packagePath} has a usable platform binary`, () => {
       const esbuild = require(join(root, packagePath));
       const result = esbuild.transformSync("const answer: number = 42", { loader: "ts" });

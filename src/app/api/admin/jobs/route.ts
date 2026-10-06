@@ -71,6 +71,7 @@ export async function GET(request: Request) {
         status: job.status,
         createdAt: job.createdAt,
         expiresAt: job.expiresAt,
+        shopSlug,
         pageCount,
         notes: extractUserNotes(job.notes),
         cancellationReason,
