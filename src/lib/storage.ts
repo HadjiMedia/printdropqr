@@ -107,6 +107,33 @@ export async function getPrintFile(reference: string): Promise<{
   return { body: Readable.toWeb(stream) as ReadableStream<Uint8Array> };
 }
 
+export async function getPrintFileBuffer(reference: string): Promise<{
+  buffer: Buffer;
+  contentType?: string;
+}> {
+  const separator = reference.indexOf(":");
+  const driver = reference.slice(0, separator);
+  const key = safeKey(reference.slice(separator + 1));
+  if (separator < 1) throw new Error("Invalid storage reference.");
+
+  if (driver === "s3") {
+    const config = s3Config();
+    if (!config) throw new Error("S3 storage is not configured.");
+    const result = await getS3Client(config).send(
+      new GetObjectCommand({ Bucket: config.bucket, Key: key }),
+    );
+    if (!result.Body) throw new Error("Stored file has no readable body.");
+    const byteArray = await result.Body.transformToByteArray();
+    return { buffer: Buffer.from(byteArray), contentType: result.ContentType };
+  }
+
+  if (driver !== "local") throw new Error("Unknown storage driver.");
+  const path = localPath(key);
+  const { readFile } = await import("node:fs/promises");
+  const buffer = await readFile(path);
+  return { buffer };
+}
+
 export async function deletePrintFile(reference: string): Promise<void> {
   const separator = reference.indexOf(":");
   if (separator < 1) throw new Error("Invalid storage reference.");

@@ -81,6 +81,8 @@ type Job = {
   pageCount?: number;
   totalPrice?: number;
   pricePerPage?: number;
+  downloadUrl?: string;
+  downloadAllUrl?: string;
 };
 
 type Props = { shops: Shop[]; selectedSlug: string; initialJobs: Job[] };
@@ -708,7 +710,7 @@ export default function AdminDashboard({ shops: initialShops, selectedSlug: init
                           {/* MULTIPLE ATTACHMENTS PREVIEW THUMBNAILS */}
                           {hasMultiImages && job.attachments && (
                             <div className="mt-3">
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <span className="text-[11px] font-bold uppercase tracking-[.1em] text-[#617767]">
                                   Attached Photos ({job.attachments.length})
                                 </span>
@@ -722,6 +724,15 @@ export default function AdminDashboard({ shops: initialShops, selectedSlug: init
                                 >
                                   Preview Gallery
                                 </button>
+                                <span>•</span>
+                                <a
+                                  href={`/api/jobs/${job.id}/download?all=1`}
+                                  download
+                                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#23664b] hover:underline"
+                                  title="Download all photos as a ZIP archive"
+                                >
+                                  <ArrowDownToLine size={11} /> Download All (ZIP)
+                                </a>
                               </div>
                               <div className="mt-1.5 flex flex-wrap gap-2">
                                 {job.attachments.map((att, index) => (
@@ -732,6 +743,7 @@ export default function AdminDashboard({ shops: initialShops, selectedSlug: init
                                       setLightboxAttachmentIndex(index);
                                     }}
                                     className="group relative size-14 cursor-pointer overflow-hidden rounded-lg border border-[#dbe4d9] bg-[#f0f4ef] transition hover:shadow-md"
+                                    title={`Click to preview ${att.name}`}
                                   >
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
@@ -742,6 +754,15 @@ export default function AdminDashboard({ shops: initialShops, selectedSlug: init
                                     <span className="absolute bottom-0.5 right-0.5 rounded bg-black/60 px-1 text-[8px] font-bold text-white">
                                       {index + 1}
                                     </span>
+                                    <a
+                                      href={att.downloadUrl || `/api/jobs/${job.id}/download?index=${att.index}`}
+                                      download
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="absolute left-0.5 top-0.5 hidden rounded bg-black/70 p-1 text-white hover:bg-[#23664b] group-hover:block"
+                                      title={`Download ${att.name}`}
+                                    >
+                                      <ArrowDownToLine size={10} />
+                                    </a>
                                   </div>
                                 ))}
                               </div>
@@ -765,21 +786,32 @@ export default function AdminDashboard({ shops: initialShops, selectedSlug: init
 
                         {/* Download / View File */}
                         {hasMultiImages ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setLightboxJob(job);
-                              setLightboxAttachmentIndex(0);
-                            }}
-                            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[#d8e3d6] bg-white px-3 text-xs font-bold text-[#355240] shadow-xs transition hover:bg-[#f3f7f1]"
-                          >
-                            <Eye size={14} /> Preview Photos ({job.attachments?.length})
-                          </button>
+                          <>
+                            <a
+                              href={`/api/jobs/${job.id}/download?all=1`}
+                              download
+                              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[#23664b] bg-[#edf5e8] px-3 text-xs font-bold text-[#23664b] shadow-xs transition hover:bg-[#e1f0db]"
+                              title="Download all attached photos as a ZIP archive"
+                            >
+                              <ArrowDownToLine size={14} /> Download All (ZIP)
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setLightboxJob(job);
+                                setLightboxAttachmentIndex(0);
+                              }}
+                              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[#d8e3d6] bg-white px-3 text-xs font-bold text-[#355240] shadow-xs transition hover:bg-[#f3f7f1]"
+                            >
+                              <Eye size={14} /> Preview Photos ({job.attachments?.length})
+                            </button>
+                          </>
                         ) : (
                           <a
                             href={`/api/jobs/${job.id}/download`}
                             download
                             className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[#d8e3d6] bg-white px-3 text-xs font-bold text-[#355240] shadow-xs transition hover:bg-[#f3f7f1]"
+                            title="Download actual print file"
                           >
                             <ArrowDownToLine size={14} /> Download File
                           </a>
@@ -1010,10 +1042,21 @@ export default function AdminDashboard({ shops: initialShops, selectedSlug: init
                 <a
                   href={lightboxJob.attachments[lightboxAttachmentIndex].downloadUrl}
                   download
-                  className="inline-flex items-center gap-1 rounded-full bg-black/60 px-3 py-1.5 text-xs font-semibold text-white hover:bg-black/90"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-xs font-semibold text-white hover:bg-black/90"
+                  title={`Download ${lightboxJob.attachments[lightboxAttachmentIndex].name}`}
                 >
-                  <ArrowDownToLine size={13} /> Download
+                  <ArrowDownToLine size={13} /> Download Photo
                 </a>
+                {lightboxJob.attachments.length > 1 && (
+                  <a
+                    href={`/api/jobs/${lightboxJob.id}/download?all=1`}
+                    download
+                    className="inline-flex items-center gap-1.5 rounded-full bg-[#23664b] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1a4f3a]"
+                    title="Download all attached photos as a ZIP archive"
+                  >
+                    <ArrowDownToLine size={13} /> Download All (ZIP)
+                  </a>
+                )}
                 <button
                   type="button"
                   onClick={() => setLightboxJob(null)}

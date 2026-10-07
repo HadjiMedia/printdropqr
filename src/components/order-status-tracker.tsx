@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertCircle,
   AlertTriangle,
+  ArrowDownToLine,
   ArrowLeft,
   Bell,
   BellOff,
@@ -46,6 +47,7 @@ type JobAttachment = {
   ext: string;
   mime: string;
   previewUrl: string;
+  downloadUrl?: string;
 };
 
 type TrackedJob = {
@@ -63,6 +65,8 @@ type TrackedJob = {
   status: JobStatus;
   cancellationReason?: string | null;
   attachments?: JobAttachment[];
+  downloadUrl?: string;
+  downloadAllUrl?: string;
   createdAt: string;
   expiresAt: string;
   pageCount?: number;
@@ -529,7 +533,7 @@ export default function OrderStatusTracker({ job: initialJob }: { job: TrackedJo
 
             {/* ORDER & PRICING BREAKDOWN */}
             <div className="mt-7 rounded-[22px] border border-[#e5ece3] bg-[#f8faf7] p-5">
-              <div className="flex items-center justify-between border-b border-[#e5ece3] pb-4">
+              <div className="flex flex-col gap-3 border-b border-[#e5ece3] pb-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3">
                   <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-white text-[#438263] shadow-sm">
                     {job.attachments && job.attachments.length > 1 ? (
@@ -546,17 +550,53 @@ export default function OrderStatusTracker({ job: initialJob }: { job: TrackedJo
                     </div>
                   </div>
                 </div>
-                <span className="rounded-full bg-white px-2.5 py-1 font-mono text-xs font-bold text-[#355240] shadow-sm">
-                  #{job.queueNumber}
-                </span>
+
+                <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                  {/* Download Action */}
+                  {job.attachments && job.attachments.length > 1 ? (
+                    <a
+                      href={`/api/jobs/${job.id}/download?all=1`}
+                      download
+                      className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[#23664b] bg-[#edf5e8] px-3 text-xs font-bold text-[#23664b] shadow-xs transition hover:bg-[#e1f0db]"
+                      title="Download all attached files as a ZIP archive"
+                    >
+                      <ArrowDownToLine size={13} /> Download All (ZIP)
+                    </a>
+                  ) : (
+                    <a
+                      href={`/api/jobs/${job.id}/download`}
+                      download
+                      className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[#d8e3d6] bg-white px-3 text-xs font-bold text-[#355240] shadow-xs transition hover:bg-[#f3f7f1]"
+                      title="Download your printable file"
+                    >
+                      <ArrowDownToLine size={13} /> Download File
+                    </a>
+                  )}
+
+                  <span className="rounded-full bg-white px-2.5 py-1 font-mono text-xs font-bold text-[#355240] shadow-sm">
+                    #{job.queueNumber}
+                  </span>
+                </div>
               </div>
 
               {/* Multiple Uploads Gallery */}
               {job.attachments && job.attachments.length > 0 && (
                 <div className="mt-4 border-b border-[#e5ece3] pb-4">
-                  <div className="mb-2.5 flex items-center justify-between text-xs font-bold text-[#455c4d]">
+                  <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-[#455c4d]">
                     <span>Uploaded Files ({job.attachments.length})</span>
-                    <span className="text-[11px] font-normal text-[#718276]">Click to preview</span>
+                    <div className="flex items-center gap-3">
+                      {job.attachments.length > 1 && (
+                        <a
+                          href={`/api/jobs/${job.id}/download?all=1`}
+                          download
+                          className="inline-flex items-center gap-1 text-[11px] font-bold text-[#23664b] hover:underline"
+                          title="Download all images as a ZIP archive"
+                        >
+                          <ArrowDownToLine size={12} /> Download All (ZIP)
+                        </a>
+                      )}
+                      <span className="text-[11px] font-normal text-[#718276]">Click to preview</span>
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
                     {job.attachments.map((att) => (
@@ -576,9 +616,20 @@ export default function OrderStatusTracker({ job: initialJob }: { job: TrackedJo
                             Page {att.index + 1}
                           </span>
                         </div>
-                        <span className="mt-1 truncate px-0.5 text-[10px] font-semibold text-[#304838]">
-                          {att.name}
-                        </span>
+                        <div className="mt-1 flex items-center justify-between gap-1 px-0.5">
+                          <span className="truncate text-[10px] font-semibold text-[#304838]">
+                            {att.name}
+                          </span>
+                          <a
+                            href={att.downloadUrl || `/api/jobs/${job.id}/download?index=${att.index}`}
+                            download
+                            onClick={(e) => e.stopPropagation()}
+                            className="shrink-0 rounded-md p-1 text-[#23664b] hover:bg-[#edf5e8]"
+                            title={`Download ${att.name}`}
+                          >
+                            <ArrowDownToLine size={12} />
+                          </a>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -660,6 +711,24 @@ export default function OrderStatusTracker({ job: initialJob }: { job: TrackedJo
               onClick={(e) => e.stopPropagation()}
             >
               <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
+                <a
+                  href={`/api/jobs/${job.id}/download?index=${previewModalAttachment.index}`}
+                  download
+                  className="inline-flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-xs font-semibold text-white hover:bg-black/90"
+                  title={`Download ${previewModalAttachment.name}`}
+                >
+                  <ArrowDownToLine size={13} /> Download Photo
+                </a>
+                {job.attachments && job.attachments.length > 1 && (
+                  <a
+                    href={`/api/jobs/${job.id}/download?all=1`}
+                    download
+                    className="inline-flex items-center gap-1.5 rounded-full bg-[#23664b] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1a4f3a]"
+                    title="Download all photos as a ZIP archive"
+                  >
+                    <ArrowDownToLine size={13} /> Download All (ZIP)
+                  </a>
+                )}
                 <button
                   type="button"
                   onClick={() => setPreviewModalAttachment(null)}

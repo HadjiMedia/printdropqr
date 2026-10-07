@@ -59,6 +59,7 @@ export async function GET(
       ext: item.ext,
       mime: item.mime,
       previewUrl: `/api/jobs/${job.id}/preview?index=${item.index}`,
+      downloadUrl: `/api/jobs/${job.id}/download?index=${item.index}`,
     }));
 
     return Response.json(
@@ -82,6 +83,8 @@ export async function GET(
         pricePerPage,
         totalPrice,
         attachments,
+        downloadUrl: `/api/jobs/${job.id}/download`,
+        downloadAllUrl: attachments.length > 1 ? `/api/jobs/${job.id}/download?all=1` : `/api/jobs/${job.id}/download`,
       },
       { headers: { "Cache-Control": "no-store, private" } },
     );

@@ -78,6 +78,8 @@ export async function GET(request: Request) {
         attachments,
         pricePerPage: getPricePerPage(job.colorType, job.paperSize),
         totalPrice: calculatePrintPrice(pageCount, job.copies, job.colorType, job.paperSize),
+        downloadUrl: `/api/jobs/${job.id}/download`,
+        downloadAllUrl: attachments.length > 1 ? `/api/jobs/${job.id}/download?all=1` : `/api/jobs/${job.id}/download`,
       };
     });
 
