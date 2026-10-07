@@ -1,15 +1,16 @@
-import { and, eq, gt } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { DatabaseConfigurationError, db } from "@/db";
 import { printJobs } from "@/db/schema";
 import { encodeCancellationReason, extractCancellationReason } from "@/lib/pricing";
+import { getLatestDeliveryForJob, sendJobFileToTelegram } from "@/lib/telegram";
 
 // Route imports must remain build-safe; database access happens only in PATCH.
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const statuses = ["WAITING", "PRINTING", "DONE", "CANCELLED"] as const;
-type JobStatus = (typeof statuses)[number];
+const validStatuses = ["WAITING", "PRINTING", "DONE", "CANCELLED"] as const;
+type JobStatus = (typeof validStatuses)[number];
 
 export async function PATCH(
   request: Request,
@@ -26,11 +27,13 @@ export async function PATCH(
 
   try {
     const body = (await request.json()) as { status?: unknown; reason?: unknown };
-    if (typeof body.status !== "string" || !statuses.includes(body.status as JobStatus)) {
+    const rawStatus = typeof body.status === "string" ? body.status.toUpperCase().trim() : "";
+    const nextStatus = (rawStatus === "COMPLETED" ? "DONE" : rawStatus) as JobStatus;
+
+    if (!validStatuses.includes(nextStatus)) {
       return Response.json({ error: "Choose a valid print status." }, { status: 400 });
     }
 
-    const nextStatus = body.status as JobStatus;
     let newNotes: string | undefined;
     let cancellationReason: string | null = null;
 
@@ -47,7 +50,7 @@ export async function PATCH(
       const [existing] = await db
         .select({ notes: printJobs.notes })
         .from(printJobs)
-        .where(and(eq(printJobs.id, jobId), gt(printJobs.expiresAt, new Date())))
+        .where(eq(printJobs.id, jobId))
         .limit(1);
 
       if (!existing) {
@@ -65,20 +68,32 @@ export async function PATCH(
     const [updated] = await db
       .update(printJobs)
       .set(updateFields)
-      .where(and(eq(printJobs.id, jobId), gt(printJobs.expiresAt, new Date())))
+      .where(eq(printJobs.id, jobId))
       .returning({ id: printJobs.id, status: printJobs.status, notes: printJobs.notes });
 
     if (!updated) {
       return Response.json({ error: "Print request not found." }, { status: 404 });
     }
 
+    // Trigger Telegram delivery asynchronously when a job becomes completed (DONE)
+    // CRITICAL: Telegram delivery runs independently and does NOT modify print job status.
+    if (nextStatus === "DONE") {
+      void sendJobFileToTelegram(jobId).catch((err) => {
+        console.error("[TelegramDelivery] Background completion send error:", err);
+      });
+    }
+
+    const delivery = await getLatestDeliveryForJob(jobId);
+
     return Response.json(
       {
         id: updated.id,
         status: updated.status,
+        printStatus: updated.status,
         cancellationReason: cancellationReason ?? extractCancellationReason(updated.notes),
+        telegramDelivery: delivery,
       },
-      { headers: { "Cache-Control": "no-store" } },
+      { headers: { "Cache-Control": "no-store, no-cache" } },
     );
   } catch (error) {
     console.error("PrintDrop status update failed.", error);

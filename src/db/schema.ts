@@ -69,3 +69,45 @@ export const printJobs = pgTable(
     shopStatusIdx: index("print_jobs_shop_status_idx").on(table.shopId, table.status),
   }),
 );
+
+export const deliveryStatusEnum = pgEnum("delivery_status", [
+  "PENDING",
+  "UPLOADING",
+  "SENT",
+  "FAILED",
+  "RETRYING",
+]);
+
+export const printFileDeliveries = pgTable(
+  "print_file_deliveries",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => printJobs.id, { onDelete: "cascade" }),
+    provider: varchar("provider", { length: 32 }).notNull().default("TELEGRAM"),
+    status: deliveryStatusEnum("status").notNull().default("PENDING"),
+    telegramChatId: varchar("telegram_chat_id", { length: 64 }),
+    telegramMessageId: varchar("telegram_message_id", { length: 64 }),
+    telegramFileId: text("telegram_file_id"),
+    originalFilename: varchar("original_filename", { length: 255 }),
+    mimeType: varchar("mime_type", { length: 120 }),
+    fileSize: integer("file_size"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true, mode: "date" }),
+    sentAt: timestamp("sent_at", { withTimezone: true, mode: "date" }),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    jobIdIdx: index("print_file_deliveries_job_id_idx").on(table.jobId),
+    statusIdx: index("print_file_deliveries_status_idx").on(table.status),
+    createdAtIdx: index("print_file_deliveries_created_at_idx").on(table.createdAt),
+  }),
+);
+
