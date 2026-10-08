@@ -30,6 +30,7 @@ import {
   QrCode,
   RefreshCw,
   Search,
+  Send,
   Settings2,
   ShieldCheck,
   Timer,
@@ -62,6 +63,16 @@ type JobAttachment = {
   downloadUrl: string;
 };
 
+type TelegramDelivery = {
+  id?: string;
+  status: "PENDING" | "UPLOADING" | "SENT" | "FAILED" | "RETRYING";
+  telegramMessageId?: string | null;
+  errorMessage?: string | null;
+  attemptCount?: number;
+  sentAt?: string | null;
+  lastAttemptAt?: string | null;
+};
+
 type Job = {
   id: string;
   queueNumber: number;
@@ -83,6 +94,7 @@ type Job = {
   pricePerPage?: number;
   downloadUrl?: string;
   downloadAllUrl?: string;
+  telegramDelivery?: TelegramDelivery | null;
 };
 
 type Props = { shops: Shop[]; selectedSlug: string; initialJobs: Job[] };
@@ -114,6 +126,59 @@ function StatusBadge({ status }: { status: JobStatus }) {
   );
 }
 
+function TelegramStatusBadge({ delivery }: { delivery?: TelegramDelivery | null }) {
+  if (!delivery) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-[#f4f7f2] px-2 py-0.5 text-[10px] font-bold text-[#5c6e61]">
+        <span className="size-1 rounded-full bg-[#8b9c8f]" />
+        Telegram: • Not Sent
+      </span>
+    );
+  }
+
+  switch (delivery.status) {
+    case "SENT":
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-[#e8f5e9] px-2 py-0.5 text-[10px] font-bold text-[#2e7d32]">
+          <Check size={11} className="stroke-[3]" />
+          Telegram: ✓ Sent
+        </span>
+      );
+    case "UPLOADING":
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-[#e1f5fe] px-2 py-0.5 text-[10px] font-bold text-[#0277bd]">
+          <LoaderCircle size={11} className="animate-spin" />
+          Telegram: ⟳ Uploading
+        </span>
+      );
+    case "FAILED":
+      return (
+        <span
+          className="inline-flex items-center gap-1 rounded-full bg-[#ffebee] px-2 py-0.5 text-[10px] font-bold text-[#c62828]"
+          title={delivery.errorMessage || "Delivery failed"}
+        >
+          <AlertCircle size={11} />
+          Telegram: ⚠ Failed
+        </span>
+      );
+    case "RETRYING":
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-[#fff8e1] px-2 py-0.5 text-[10px] font-bold text-[#f57f17]">
+          <RefreshCw size={11} className="animate-spin" />
+          Telegram: ↻ Retrying
+        </span>
+      );
+    case "PENDING":
+    default:
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-[#f5f5f5] px-2 py-0.5 text-[10px] font-bold text-[#616161]">
+          <Clock3 size={11} />
+          Telegram: • Pending
+        </span>
+      );
+  }
+}
+
 export default function AdminDashboard({ shops: initialShops, selectedSlug: initialSlug, initialJobs }: Props) {
   const router = useRouter();
   const [shops, setShops] = useState(initialShops);
@@ -137,6 +202,9 @@ export default function AdminDashboard({ shops: initialShops, selectedSlug: init
   // Image lightbox preview state
   const [lightboxJob, setLightboxJob] = useState<Job | null>(null);
   const [lightboxAttachmentIndex, setLightboxAttachmentIndex] = useState(0);
+
+  // Telegram delivery action state
+  const [sendingTelegramId, setSendingTelegramId] = useState<string>("");
 
   const selectedShop = shops.find((shop) => shop.slug === selectedSlug);
 
@@ -200,6 +268,75 @@ export default function AdminDashboard({ shops: initialShops, selectedSlug: init
       setError(cause instanceof Error ? cause.message : "Couldn't update this request.");
     } finally {
       setUpdatingId("");
+    }
+  }
+
+  async function triggerTelegramDelivery(job: Job, retry = false) {
+    setSendingTelegramId(job.id);
+    setError("");
+
+    // Optimistically show uploading status on delivery
+    setJobs((current) =>
+      current.map((item) =>
+        item.id === job.id
+          ? {
+              ...item,
+              telegramDelivery: {
+                ...(item.telegramDelivery ?? { status: "UPLOADING" }),
+                status: "UPLOADING",
+                errorMessage: null,
+              },
+            }
+          : item,
+      ),
+    );
+
+    try {
+      const response = await fetch(`/api/admin/jobs/${job.id}/telegram`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ retry }),
+      });
+      const result = (await response.json()) as {
+        success?: boolean;
+        delivery?: TelegramDelivery | null;
+        error?: string;
+      };
+
+      if (result.delivery) {
+        setJobs((current) =>
+          current.map((item) =>
+            item.id === job.id
+              ? {
+                  ...item,
+                  telegramDelivery: result.delivery,
+                }
+              : item,
+          ),
+        );
+      }
+      if (!result.success && result.error) {
+        setError(`Telegram delivery: ${result.error}`);
+      }
+    } catch (cause) {
+      const msg = cause instanceof Error ? cause.message : "Failed to send to Telegram.";
+      setError(`Telegram delivery error: ${msg}`);
+      setJobs((current) =>
+        current.map((item) =>
+          item.id === job.id
+            ? {
+                ...item,
+                telegramDelivery: {
+                  ...(item.telegramDelivery ?? { status: "FAILED" }),
+                  status: "FAILED",
+                  errorMessage: msg,
+                },
+              }
+            : item,
+        ),
+      );
+    } finally {
+      setSendingTelegramId("");
     }
   }
 
@@ -661,6 +798,7 @@ export default function AdminDashboard({ shops: initialShops, selectedSlug: init
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="text-base font-bold text-[#1f372a]">{job.customerName}</h3>
                             <StatusBadge status={job.status} />
+                            <TelegramStatusBadge delivery={job.telegramDelivery} />
                           </div>
 
                           {/* File Description */}
@@ -815,6 +953,58 @@ export default function AdminDashboard({ shops: initialShops, selectedSlug: init
                           >
                             <ArrowDownToLine size={14} /> Download File
                           </a>
+                        )}
+
+                        {/* Telegram Delivery Actions */}
+                        {job.telegramDelivery?.status === "FAILED" ? (
+                          <button
+                            type="button"
+                            disabled={sendingTelegramId === job.id}
+                            onClick={() => void triggerTelegramDelivery(job, true)}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[#f5c2b8] bg-[#fff5f2] px-3 text-xs font-bold text-[#c62828] shadow-xs transition hover:bg-[#ffebee] disabled:opacity-50"
+                            title={job.telegramDelivery.errorMessage || "Retry sending original file to Telegram"}
+                          >
+                            {sendingTelegramId === job.id ? (
+                              <LoaderCircle size={13} className="animate-spin" />
+                            ) : (
+                              <RefreshCw size={13} />
+                            )}
+                            Retry Telegram
+                          </button>
+                        ) : job.telegramDelivery?.status === "SENT" ? (
+                          <button
+                            type="button"
+                            disabled={sendingTelegramId === job.id}
+                            onClick={() => void triggerTelegramDelivery(job, true)}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[#c8e6c9] bg-[#f1f8e9] px-2.5 text-xs font-bold text-[#2e7d32] shadow-xs transition hover:bg-[#e8f5e9] disabled:opacity-50"
+                            title="File delivered. Click to resend original file to Telegram."
+                          >
+                            {sendingTelegramId === job.id ? (
+                              <LoaderCircle size={13} className="animate-spin" />
+                            ) : (
+                              <Check size={13} className="stroke-[3]" />
+                            )}
+                            Telegram Sent
+                          </button>
+                        ) : job.telegramDelivery?.status === "UPLOADING" || sendingTelegramId === job.id ? (
+                          <button
+                            type="button"
+                            disabled
+                            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[#b3e5fc] bg-[#e1f5fe] px-3 text-xs font-bold text-[#0277bd] shadow-xs"
+                          >
+                            <LoaderCircle size={13} className="animate-spin" />
+                            Sending…
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={sendingTelegramId === job.id}
+                            onClick={() => void triggerTelegramDelivery(job, false)}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[#cce4f7] bg-[#f0f7fd] px-3 text-xs font-bold text-[#1965a3] shadow-xs transition hover:bg-[#e2f0fc] disabled:opacity-50"
+                            title="Send original uncompressed print file to configured Telegram user"
+                          >
+                            <Send size={13} /> Send to Telegram
+                          </button>
                         )}
 
                         {/* Status Transition Action Buttons */}

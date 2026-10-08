@@ -81,7 +81,7 @@ export function safeFileName(input: string): string {
   const cleaned = leaf
     .normalize("NFKC")
     .replace(/[\u0000-\u001f\u007f]/g, "")
-    .replace(/[^\p{L}\p{N}._ -]/gu, "-")
+    .replace(/[^\p{L}\p{N}._ ()-]/gu, "-")
     .trim()
     .slice(0, 180);
   return cleaned || "print-file";

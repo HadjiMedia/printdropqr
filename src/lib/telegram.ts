@@ -1,4 +1,4 @@
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { printJobs, printFileDeliveries, type deliveryStatusEnum } from "@/db/schema";
 import { getPrintFileBuffer } from "@/lib/storage";
@@ -132,6 +132,34 @@ export async function getLatestDeliveryForJob(
   } catch (err) {
     console.error("Failed to query printFileDeliveries:", err);
     return null;
+  }
+}
+
+/**
+ * Batch-loads the latest delivery record for a list of print job IDs.
+ */
+export async function getLatestDeliveriesForJobs(
+  jobIds: string[],
+): Promise<Record<string, TelegramDeliveryRecord>> {
+  if (jobIds.length === 0) return {};
+  await ensureDeliveriesTable();
+  try {
+    const records = await db
+      .select()
+      .from(printFileDeliveries)
+      .where(inArray(printFileDeliveries.jobId, jobIds))
+      .orderBy(desc(printFileDeliveries.createdAt));
+
+    const map: Record<string, TelegramDeliveryRecord> = {};
+    for (const rec of records) {
+      if (!map[rec.jobId]) {
+        map[rec.jobId] = rec as TelegramDeliveryRecord;
+      }
+    }
+    return map;
+  } catch (err) {
+    console.error("Failed to batch query printFileDeliveries:", err);
+    return {};
   }
 }
 

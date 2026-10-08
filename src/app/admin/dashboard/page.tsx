@@ -12,6 +12,7 @@ import {
   getPricePerPage,
   parseJobAttachments,
 } from "@/lib/pricing";
+import { getLatestDeliveriesForJobs } from "@/lib/telegram";
 import AdminDashboard from "@/components/admin-dashboard";
 
 export const dynamic = "force-dynamic";
@@ -98,6 +99,9 @@ export default async function AdminDashboardPage({
         .orderBy(desc(printJobs.createdAt))
         .limit(150);
 
+      const jobIds = rawJobs.map((j) => j.id);
+      const deliveriesMap = await getLatestDeliveriesForJobs(jobIds);
+
       initialJobs = rawJobs.map((job) => {
         const pageCount = extractPageCount(job.notes);
         const cancellationReason = extractCancellationReason(job.notes);
@@ -129,6 +133,7 @@ export default async function AdminDashboardPage({
           attachments,
           downloadUrl: `/api/jobs/${job.id}/download`,
           downloadAllUrl: attachments.length > 1 ? `/api/jobs/${job.id}/download?all=1` : `/api/jobs/${job.id}/download`,
+          telegramDelivery: deliveriesMap[job.id] || null,
           createdAt: job.createdAt.toISOString(),
           expiresAt: job.expiresAt.toISOString(),
         };

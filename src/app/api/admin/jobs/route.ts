@@ -10,6 +10,7 @@ import {
   getPricePerPage,
   parseJobAttachments,
 } from "@/lib/pricing";
+import { getLatestDeliveriesForJobs } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,9 @@ export async function GET(request: Request) {
       .orderBy(desc(printJobs.createdAt))
       .limit(150);
 
+    const jobIds = rawJobs.map((j) => j.id);
+    const deliveriesMap = await getLatestDeliveriesForJobs(jobIds);
+
     const jobs = rawJobs.map((job) => {
       const pageCount = extractPageCount(job.notes);
       const cancellationReason = extractCancellationReason(job.notes);
@@ -80,6 +84,7 @@ export async function GET(request: Request) {
         totalPrice: calculatePrintPrice(pageCount, job.copies, job.colorType, job.paperSize),
         downloadUrl: `/api/jobs/${job.id}/download`,
         downloadAllUrl: attachments.length > 1 ? `/api/jobs/${job.id}/download?all=1` : `/api/jobs/${job.id}/download`,
+        telegramDelivery: deliveriesMap[job.id] || null,
       };
     });
 

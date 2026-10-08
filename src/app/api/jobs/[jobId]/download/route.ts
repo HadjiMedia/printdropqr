@@ -110,38 +110,61 @@ export async function GET(
     // SINGLE FILE / SPECIFIC ATTACHMENT DOWNLOAD:
     const attachment = attachments[targetIndex] || attachments[0];
     if (!attachment || !attachment.url) {
-      return new Response("Requested attachment not found.", {
+      return new Response("FILE_NOT_FOUND: Requested attachment not found.", {
         status: 404,
         headers: { "Content-Type": "text/plain" },
       });
     }
 
-    const file = await getPrintFile(attachment.url);
+    const { buffer, contentType: storedContentType } = await getPrintFileBuffer(attachment.url);
     const fileName = safeFileName(attachment.name || job.fileName || "print-file");
     const extension = attachment.ext || fileName.split(".").pop()?.toLowerCase() || "";
     const contentType =
-      file.contentType ||
+      storedContentType ||
       attachment.mime ||
       contentTypeByExtension[extension] ||
       "application/octet-stream";
 
     const dispositionType = isInline ? "inline" : "attachment";
-    const dispositionName = encodeURIComponent(fileName).replace(/[!'()*]/g, (character) =>
+    // Robust RFC 6266 / RFC 5987 Content-Disposition header with ASCII fallback and UTF-8 filename*
+    const asciiFallback = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const utf8Name = encodeURIComponent(fileName).replace(/[!'()*]/g, (character) =>
       `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
     );
 
-    return new Response(file.body, {
+    return new Response(new Uint8Array(buffer), {
       headers: {
         "Content-Type": contentType,
-        "Content-Disposition": `${dispositionType}; filename="${fileName}"; filename*=UTF-8''${dispositionName}`,
-        ...(attachment.size ? { "Content-Length": String(attachment.size) } : {}),
+        "Content-Disposition": `${dispositionType}; filename="${asciiFallback}"; filename*=UTF-8''${utf8Name}`,
+        "Content-Length": String(buffer.byteLength),
         "Cache-Control": "private, no-cache, no-store",
         "X-Content-Type-Options": "nosniff",
       },
     });
   } catch (error) {
-    console.error("PrintDrop file download failed.", error);
-    return new Response("The requested print file is temporarily unavailable.", {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`[PrintDropDownload] jobId=${jobId} error="${errorMsg}"`, error);
+
+    if (errorMsg.includes("ENOENT") || errorMsg.includes("not found") || errorMsg.includes("NoSuchKey")) {
+      return new Response("FILE_NOT_FOUND: The requested print file could not be found in storage.", {
+        status: 404,
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
+    if (errorMsg.includes("AccessDenied") || errorMsg.includes("EACCES")) {
+      return new Response("STORAGE_ACCESS_DENIED: Access to the storage file was denied.", {
+        status: 403,
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
+    if (errorMsg.includes("timeout") || errorMsg.includes("ETIMEDOUT")) {
+      return new Response("STORAGE_TIMEOUT: Storage connection timed out.", {
+        status: 504,
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
+
+    return new Response("INTERNAL_STORAGE_ERROR: The requested print file is temporarily unavailable.", {
       status: 503,
       headers: { "Content-Type": "text/plain" },
     });
